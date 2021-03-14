@@ -41,7 +41,7 @@ type Utils () =
                 if resultSet.ExpectedColumns.Length = 1 then
                     Array.item 0
                 elif resultType = ResultType.Tuples then
-                    Reflection.FSharpValue.PreComputeTupleConstructor resultSet.SeqItemType
+                    Reflection.FSharpValue.PreComputeTupleConstructor (typedefof<Tuple<_>>)
                 else
                     box
             
@@ -60,6 +60,38 @@ type Utils () =
             rowMapping, columnMappings)
 
         fun x -> cache.GetOrAdd (x, factory)
+
+    static let getRowToTupleReader =
+        let cache = ConcurrentDictionary<Type, Func<DbDataReader, obj>> ()
+        let getFieldValue = typeof<DbDataReader>.GetMethod "GetFieldValue"
+        let isDbNull = typeof<DbDataReader>.GetMethod "IsDBNull"
+
+        fun (typ, resultSet) ->
+            match cache.TryGetValue typ with
+            | true, func -> func
+            | _ ->
+                let func =
+                    let param = Expression.Parameter typeof<DbDataReader>
+                    let expr =
+                        Expression.Lambda<Func<DbDataReader, obj>> (
+                            Expression.New (
+                                typ.GetConstructor (typ.GetGenericArguments ()),
+                                resultSet.ExpectedColumns |> Array.indexed |> Array.sortBy (fun (_, c) -> c.ColumnName) |> Array.map (fun (i, c) ->
+                                    let v = Expression.Call (param, getFieldValue.MakeGenericMethod c.DataType, Expression.Constant i)
+
+                                    if c.AllowDBNull then
+                                        Expression.IfThenElse (
+                                            Expression.Call (param, isDbNull, Expression.Constant i),
+                                            Expression.New (typedefof<_ option>.MakeGenericType(c.DataType).GetConstructor [| |]),
+                                            Expression.New (typedefof<_ option>.MakeGenericType(c.DataType).GetConstructor [| c.DataType |], v)) :> Expression
+                                    else
+                                        v :> Expression)),
+                            param)
+
+                    expr.Compile ()
+
+                cache.[typ] <- func
+                func
 
     static member ResizeArrayToList ra =
         let rec inner (ra: ResizeArray<'a>, index, acc) = 
@@ -80,7 +112,7 @@ type Utils () =
         let mi = typeof<NpgsqlDataReader>.GetProperty("StatementIndex", Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetMethod
         Delegate.CreateDelegate (typeof<Func<NpgsqlDataReader, int>>, mi) :?> Func<NpgsqlDataReader, int>
 
-    static member val EmptyResultSet = { SeqItemType = null; ExpectedColumns = [||] }
+    static member val EmptyResultSet = { ExpectedColumns = [||] }
 
     static member ToSqlParam (name, dbType: NpgsqlTypes.NpgsqlDbType, size, scale, precision) = 
         NpgsqlParameter (name, dbType, size, Scale = scale, Precision = precision)
@@ -109,6 +141,7 @@ type Utils () =
                 let t = Type.GetType (typeName + ", FSharp.Core")
 
                 if isNull t then
+                    //todo nettopology
                     Type.GetType (typeName + ", Npgsql", true)
                 else
                     t
@@ -150,20 +183,15 @@ type Utils () =
         let [| columnName; typeName; nullable |] = stringValues.Split '|'
         new DataColumn (columnName, Utils.GetType typeName, AllowDBNull = (nullable = "1"))
 
-    static member MapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet) = Unsafe.uply {
-        let rowMapping, columnMappings = getRowAndColumnMappings (resultType, resultSet)
+    static member NoBoxingMapRowValues<'TItem> (cursor: DbDataReader, resultSet) = Unsafe.uply {
         let results = ResizeArray<'TItem> ()
-        let values = Array.zeroCreate cursor.FieldCount
+        let rowReader = getRowToTupleReader (typeof<'TItem>, resultSet)
         
         let! go = cursor.ReadAsync ()
         let mutable go = go
 
         while go do
-            cursor.GetValues values |> ignore
-
-            columnMappings
-            |> Array.map (fun f -> f values)
-            |> rowMapping
+            rowReader.Invoke cursor
             |> unbox<'TItem>
             |> results.Add
 
@@ -171,6 +199,29 @@ type Utils () =
             go <- cont
 
         return results }
+
+    static member MapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet: ResultSetDefinition) =
+        if resultSet.IsErasableToTuple then Utils.NoBoxingMapRowValues<'TItem> (cursor, resultSet) else Unsafe.uply {
+            let rowMapping, columnMappings = getRowAndColumnMappings (resultType, resultSet)
+            let results = ResizeArray<'TItem> ()
+            let values = Array.zeroCreate cursor.FieldCount
+            
+            let! go = cursor.ReadAsync ()
+            let mutable go = go
+
+            while go do
+                cursor.GetValues values |> ignore
+
+                columnMappings
+                |> Array.map (fun f -> f values)
+                |> rowMapping
+                |> unbox<'TItem>
+                |> results.Add
+
+                let! cont = cursor.ReadAsync ()
+                go <- cont
+
+            return results }
 
     static member MapRowValuesLazy<'TItem> (cursor: DbDataReader, resultType, resultSet) =
         seq {

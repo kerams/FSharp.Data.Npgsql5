@@ -30,10 +30,13 @@ type CollectionType =
     | ResizeArray = 2
     | LazySeq = 3
 
-[<EditorBrowsable(EditorBrowsableState.Never)>]
+[<EditorBrowsable(EditorBrowsableState.Never); NoEquality; NoComparison>]
 type ResultSetDefinition = {
-    SeqItemType: System.Type
     ExpectedColumns: DataColumn[] }
+
+    with
+        member x.IsErasableToTuple =
+            x.ExpectedColumns.Length > 1 && x.ExpectedColumns.Length < 8
 
 type LazySeq<'a> (s: 'a seq, reader: Common.DbDataReader, cmd: NpgsqlCommand) =
     member val Seq = s

@@ -35,7 +35,7 @@ type internal Statement = {
 }
 
 type internal ProvidedTypeReuse =
-    | WithCache of ConcurrentDictionary<string, ProvidedTypeDefinition>
+    | WithCache of ConcurrentDictionary<string, ProvidedTypeDefinition * Type>
     | NoReuse
 
 type internal QuotationsFactory () = 
@@ -124,25 +124,28 @@ type internal QuotationsFactory () =
     static member GetRecordType (rootTypeName, columns: Column list, customTypes: Map<string, ProvidedTypeDefinition>, typeNameSuffix, providedTypeReuse) =
         columns 
         |> List.groupBy (fun x -> x.Name)
-        |> List.iter (fun (name, xs) -> if not xs.Tail.IsEmpty then failwithf "Non-unique column name %s is illegal for ResultType.Records." name)
+        |> List.iter (fun (name, xs) ->
+            if not xs.Tail.IsEmpty then
+                failwithf "Non-unique column name %s is not supported for ResultType.Records." name
+            if String.IsNullOrEmpty name then
+                failwithf "One or more columns do not have a name. Please give the columns an explicit alias.")
         
         let createType typeName =
-            let recordType = ProvidedTypeDefinition (typeName, baseType = Some typeof<obj[]>, hideObjectMethods = true)
+            let isErasedToTuple = columns.Length < 8
+            let tt = if isErasedToTuple then ProvidedTypeBuilder.MakeTupleType (columns |> List.sortBy (fun x -> x.Name) |> List.map (fun x -> x.MakeProvidedType customTypes)) else null
+
+            let baseType = if isErasedToTuple then tt else typeof<obj[]>
+            let recordType = ProvidedTypeDefinition (typeName, baseType = Some baseType, hideObjectMethods = true)
             
             columns
             |> List.sortBy (fun x -> x.Name)
             |> List.iteri (fun i col ->
-                let propertyName =
-                    if String.IsNullOrEmpty col.Name then
-                        let originalIndex = List.findIndex (fun x -> x = col) columns
-                        failwithf "Column #%i doesn't have a name. Only named columns are supported. Use an explicit alias." (originalIndex + 1)
-                    else
-                        col.Name
+                if isErasedToTuple then
+                    ProvidedProperty (col.Name, col.MakeProvidedType customTypes, fun args -> Expr.PropertyGet (args.[0], tt.GetProperty (sprintf "Item%d" (i + 1)))) |> recordType.AddMember
+                else
+                    ProvidedProperty (col.Name, col.MakeProvidedType customTypes, fun args -> QuotationsFactory.GetValueAtIndexExpr (Expr.Coerce (args.[0], typeof<obj[]>), i)) |> recordType.AddMember)
 
-                let propType = col.MakeProvidedType customTypes
-                ProvidedProperty (propertyName, propType, fun args -> QuotationsFactory.GetValueAtIndexExpr (Expr.Coerce (args.[0], typeof<obj[]>), i)) |> recordType.AddMember)
-
-            recordType
+            recordType, baseType
 
         match providedTypeReuse with
         | WithCache cache ->
@@ -349,8 +352,8 @@ type internal QuotationsFactory () =
                         let provided = column0.MakeProvidedType customTypes
                         provided, erasedTo
                     elif resultType = ResultType.Records then 
-                        let provided = QuotationsFactory.GetRecordType (rootTypeName, columns, customTypes, typeNameSuffix, providedTypeReuse)
-                        upcast provided, typeof<obj[]>
+                        let provided, erasedTo = QuotationsFactory.GetRecordType (rootTypeName, columns, customTypes, typeNameSuffix, providedTypeReuse)
+                        provided :> Type, erasedTo
                     else
                         let providedType =
                             match columns with

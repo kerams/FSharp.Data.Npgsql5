@@ -13,7 +13,7 @@ open InformationSchema
 open System.Collections.Concurrent
 
 let methodsCache = ConcurrentDictionary<string, ProvidedMethod> ()
-let typeCache = ConcurrentDictionary<string, ProvidedTypeDefinition> ()
+let typeCache = ConcurrentDictionary<string, ProvidedTypeDefinition * Type> ()
 let schemaCache = ConcurrentDictionary<string, DbSchemaLookups> ()
 
 let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, commands: ProvidedTypeDefinition, customTypes: Map<string, ProvidedTypeDefinition>,
@@ -198,7 +198,7 @@ let createRootType (assembly, nameSpace: string, typeName, connectionString, xct
     let providedTypeReuse = if reuseProvidedTypes then WithCache typeCache else NoReuse
     addCreateCommandMethod (connectionString, databaseRootType, commands, customTypes, schemaLookups, xctor, prepare, providedTypeReuse, methodTypes, collectionType)
 
-    databaseRootType           
+    databaseRootType, typeof<obj>
 
 let internal getProviderType (assembly, nameSpace) = 
 
@@ -213,7 +213,7 @@ let internal getProviderType (assembly, nameSpace) =
             ProvidedStaticParameter("MethodTypes", typeof<MethodTypes>, MethodTypes.Sync ||| MethodTypes.Async)
             ProvidedStaticParameter("CollectionType", typeof<CollectionType>, CollectionType.List)
         ],
-        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4], unbox args.[5])))
+        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4], unbox args.[5])) |> fst)
 
     providerType.AddXmlDoc """
 <summary>Typed access to PostgreSQL programmable objects, tables and functions.</summary> 
