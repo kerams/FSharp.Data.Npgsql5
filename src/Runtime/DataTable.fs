@@ -36,8 +36,8 @@ type ResultSetDefinition = {
     ExpectedColumns: DataColumn[] }
 
     with
-        member x.IsErasableToTuple =
-            x.ExpectedColumns.Length > 1 && x.ExpectedColumns.Length < 8
+        member x.CanBeReadWithoutBoxing resultType =
+            (resultType = ResultType.Records || resultType = ResultType.Tuples) && x.ExpectedColumns.Length > 1 && x.ExpectedColumns.Length < 8
 
 type LazySeq<'a> (s: 'a seq, reader: Common.DbDataReader, cmd: NpgsqlCommand) =
     member val Seq = s

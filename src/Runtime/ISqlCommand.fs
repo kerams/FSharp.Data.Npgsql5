@@ -216,7 +216,13 @@ type ISqlCommandImplementation (commandNameHash: int, cfgBuilder: unit -> Design
         if cfg.CollectionType = CollectionType.LazySeq && not cfg.SingleRow then
             let t = Unsafe.uply {
                 let! reader = ISqlCommandImplementation.AsyncExecuteDataReaderTask (cfg, cmd, connection, parameters)
-                let xs = MapRowValuesLazy<'TItem> (reader, cfg.ResultType, cfg.ResultSets.[0])
+                
+                let xs =
+                    if cfg.ResultSets.[0].CanBeReadWithoutBoxing cfg.ResultType then
+                        NoBoxingMapRowValuesLazy<'TItem> (reader, cfg.ResultSets.[0])
+                    else
+                        MapRowValuesLazy<'TItem> (reader, cfg.ResultType, cfg.ResultSets.[0])
+
                 return new LazySeq<'TItem> (xs, reader, cmd) }
 
             mapTask (t, executionType)

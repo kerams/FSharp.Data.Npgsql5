@@ -129,33 +129,19 @@ type Utils () =
         c
 
     static member CreateResultSetDefinition (columns: DataColumn[], resultType) =
-        let isErasableToTuple = columns.Length > 1 && columns.Length < 8
-
         let t =
-            match resultType with
-            | ResultType.Records ->
-                if isErasableToTuple then
-                    Utils.ToTupleType (columns |> Array.sortBy (fun c -> c.ColumnName))
-                elif columns.Length = 1 then
-                    if columns.[0].AllowDBNull then
-                        typedefof<_ option>.MakeGenericType columns.[0].DataType
+            match columns with
+            | [||] -> typeof<int>
+            | [| c |] -> if c.AllowDBNull then typedefof<_ option>.MakeGenericType c.DataType else c.DataType
+            | _ ->
+                match resultType with
+                | ResultType.Records ->
+                    if columns.Length > 1 && columns.Length < 8 then
+                        Utils.ToTupleType (columns |> Array.sortBy (fun c -> c.ColumnName))
                     else
-                        columns.[0].DataType
-                elif columns.Length = 0 then
-                    typeof<int32>
-                else
-                    typeof<obj[]>
-            | ResultType.Tuples ->
-                if columns.Length = 1 then
-                    if columns.[0].AllowDBNull then
-                        typedefof<_ option>.MakeGenericType columns.[0].DataType
-                    else
-                        columns.[0].DataType
-                elif columns.Length = 0 then
-                    typeof<int32>
-                else
-                    Utils.ToTupleType columns
-            | _ -> null
+                        typeof<obj[]>
+                | ResultType.Tuples -> Utils.ToTupleType columns
+                | _ -> null
         { ErasedRowType = t; ExpectedColumns = columns }
 
     static member GetType typeName = 
@@ -234,8 +220,16 @@ type Utils () =
 
         return results }
 
+    static member NoBoxingMapRowValuesLazy<'TItem> (cursor: DbDataReader, resultSet) =
+        seq {
+            let rowReader = getRowToTupleReader resultSet
+
+            while cursor.Read () do
+                rowReader.Invoke cursor |> unbox<'TItem>
+        }
+
     static member MapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet: ResultSetDefinition) =
-        if resultType = ResultType.Records && resultSet.IsErasableToTuple then Utils.NoBoxingMapRowValues<'TItem> (cursor, resultSet) else Unsafe.uply {
+        if resultSet.CanBeReadWithoutBoxing resultType then Utils.NoBoxingMapRowValues<'TItem> (cursor, resultSet) else Unsafe.uply {
             let rowMapping, columnMappings = getRowAndColumnMappings (resultType, resultSet)
             let results = ResizeArray<'TItem> ()
             let values = Array.zeroCreate cursor.FieldCount
@@ -249,7 +243,7 @@ type Utils () =
                 columnMappings
                 |> Array.map (fun f -> f values)
                 |> rowMapping
-                |> unbox<'TItem>
+                |> unbox
                 |> results.Add
 
                 let! cont = cursor.ReadAsync ()
