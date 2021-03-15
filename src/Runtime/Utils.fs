@@ -64,7 +64,7 @@ type Utils () =
     static let getRowToTupleReader =
         let cache = ConcurrentDictionary<int, Func<DbDataReader, obj>> ()
 
-        fun resultSet ->
+        fun (resultSet, sortColumns) ->
             let mutable func = Unchecked.defaultof<_>
             if cache.TryGetValue (resultSet.ExpectedColumns.GetHashCode (), &func) then
                 func
@@ -75,7 +75,7 @@ type Utils () =
                         Expression.Lambda<Func<DbDataReader, obj>> (
                             Expression.New (
                                 resultSet.ErasedRowType.GetConstructor (resultSet.ErasedRowType.GetGenericArguments ()),
-                                resultSet.ExpectedColumns |> Array.indexed |> Array.sortBy (fun (_, c) -> c.ColumnName) |> Array.map (fun (i, c) ->
+                                resultSet.ExpectedColumns |> Array.indexed |> (if sortColumns then Array.sortBy (fun (_, c) -> c.ColumnName) else id) |> Array.map (fun (i, c) ->
                                     let v = Expression.Call (param, typeof<DbDataReader>.GetMethod("GetFieldValue").MakeGenericMethod c.DataType, Expression.Constant i)
 
                                     if c.AllowDBNull then
@@ -203,9 +203,9 @@ type Utils () =
         let [| columnName; typeName; nullable |] = stringValues.Split '|'
         new DataColumn (columnName, Utils.GetType typeName, AllowDBNull = (nullable = "1"))
 
-    static member NoBoxingMapRowValues<'TItem> (cursor: DbDataReader, resultSet) = Unsafe.uply {
+    static member NoBoxingMapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet) = Unsafe.uply {
         let results = ResizeArray<'TItem> ()
-        let rowReader = getRowToTupleReader resultSet
+        let rowReader = getRowToTupleReader (resultSet, resultType = ResultType.Records)
         
         let! go = cursor.ReadAsync ()
         let mutable go = go
@@ -220,16 +220,16 @@ type Utils () =
 
         return results }
 
-    static member NoBoxingMapRowValuesLazy<'TItem> (cursor: DbDataReader, resultSet) =
+    static member NoBoxingMapRowValuesLazy<'TItem> (cursor: DbDataReader, resultType, resultSet) =
         seq {
-            let rowReader = getRowToTupleReader resultSet
+            let rowReader = getRowToTupleReader (resultSet, resultType = ResultType.Records)
 
             while cursor.Read () do
                 rowReader.Invoke cursor |> unbox<'TItem>
         }
 
     static member MapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet: ResultSetDefinition) =
-        if resultSet.CanBeReadWithoutBoxing resultType then Utils.NoBoxingMapRowValues<'TItem> (cursor, resultSet) else Unsafe.uply {
+        if resultSet.CanBeReadWithoutBoxing resultType then Utils.NoBoxingMapRowValues<'TItem> (cursor, resultType, resultSet) else Unsafe.uply {
             let rowMapping, columnMappings = getRowAndColumnMappings (resultType, resultSet)
             let results = ResizeArray<'TItem> ()
             let values = Array.zeroCreate cursor.FieldCount
