@@ -4,29 +4,17 @@ open System
 open System.Data
 open System.Reflection
 open FSharp.Quotations
-
 open ProviderImplementation.ProvidedTypes
-
 open Npgsql
 open FSharp.Data.Npgsql
 open InformationSchema
 open System.Collections.Concurrent
 open System.Threading.Tasks
 
-type internal RowType = {
-    Provided: Type
-    ErasedTo: Type
-}
-
 type internal ReturnType = {
     Single: Type
-    PerRow: RowType option
-}  with 
-
-    member this.SeqItemTypeName = 
-        match this.PerRow with
-        | Some x -> x.ErasedTo.FullName
-        | None -> null
+    RowProvidedType: Type option
+}
 
 type internal Statement = {
     Type: StatementType
@@ -35,7 +23,7 @@ type internal Statement = {
 }
 
 type internal ProvidedTypeReuse =
-    | WithCache of ConcurrentDictionary<string, ProvidedTypeDefinition * Type>
+    | WithCache of ConcurrentDictionary<string, ProvidedTypeDefinition>
     | NoReuse
 
 type internal QuotationsFactory () = 
@@ -132,20 +120,23 @@ type internal QuotationsFactory () =
         
         let createType typeName =
             let isErasedToTuple = columns.Length < 8
-            let tt = if isErasedToTuple then ProvidedTypeBuilder.MakeTupleType (columns |> List.sortBy (fun x -> x.Name) |> List.map (fun x -> x.MakeProvidedType customTypes)) else null
+            let baseType =
+                if isErasedToTuple then
+                    ProvidedTypeBuilder.MakeTupleType [ for x in columns |> List.sortBy (fun x -> x.Name) -> x.MakeProvidedType customTypes ]
+                else
+                    typeof<obj[]> //, typeof<obj[]>
 
-            let baseType = if isErasedToTuple then tt else typeof<obj[]>
             let recordType = ProvidedTypeDefinition (typeName, baseType = Some baseType, hideObjectMethods = true)
             
             columns
             |> List.sortBy (fun x -> x.Name)
             |> List.iteri (fun i col ->
                 if isErasedToTuple then
-                    ProvidedProperty (col.Name, col.MakeProvidedType customTypes, fun args -> Expr.PropertyGet (args.[0], tt.GetProperty (sprintf "Item%d" (i + 1)))) |> recordType.AddMember
+                    ProvidedProperty (col.Name, col.MakeProvidedType customTypes, fun args -> Expr.PropertyGet (Expr.Coerce (args.[0], baseType), baseType.GetProperty (sprintf "Item%d" (i + 1)))) |> recordType.AddMember
                 else
                     ProvidedProperty (col.Name, col.MakeProvidedType customTypes, fun args -> QuotationsFactory.GetValueAtIndexExpr (Expr.Coerce (args.[0], typeof<obj[]>), i)) |> recordType.AddMember)
 
-            recordType, baseType
+            recordType
 
         match providedTypeReuse with
         | WithCache cache ->
@@ -331,7 +322,7 @@ type internal QuotationsFactory () =
             | _, Control ->
                 None
             | _, NonQuery ->
-                Some { Single = typeof<int>; PerRow = None }
+                Some { Single = typeof<int>; RowProvidedType = None }
             | ResultType.DataTable, Query columns ->
                 let dataRowType = QuotationsFactory.GetDataRowType (customTypes, columns)
                 let dataTableType =
@@ -343,29 +334,17 @@ type internal QuotationsFactory () =
 
                 dataTableType.AddMember dataRowType
 
-                Some { Single = dataTableType; PerRow = None }
+                Some { Single = dataTableType; RowProvidedType = None }
             | _, Query columns ->
-                let providedRowType, erasedToRowType =
+                let providedRowType =
                     if List.length columns = 1 then
-                        let column0 = columns.Head
-                        let erasedTo = column0.ClrTypeConsideringNullability
-                        let provided = column0.MakeProvidedType customTypes
-                        provided, erasedTo
+                        columns.Head.MakeProvidedType customTypes
                     elif resultType = ResultType.Records then 
-                        let provided, erasedTo = QuotationsFactory.GetRecordType (rootTypeName, columns, customTypes, typeNameSuffix, providedTypeReuse)
-                        provided :> Type, erasedTo
+                        QuotationsFactory.GetRecordType (rootTypeName, columns, customTypes, typeNameSuffix, providedTypeReuse) :> Type
                     else
-                        let providedType =
-                            match columns with
-                            | [ x ] -> x.MakeProvidedType customTypes
-                            | xs -> Reflection.FSharpType.MakeTupleType [| for x in xs -> x.MakeProvidedType customTypes |]
-
-                        let erasedToTupleType =
-                            match columns with
-                            | [ x ] -> x.ClrTypeConsideringNullability
-                            | xs -> Reflection.FSharpType.MakeTupleType [| for x in xs -> x.ClrTypeConsideringNullability |]
-
-                        providedType, erasedToTupleType
+                        match columns with
+                        | [ x ] -> x.MakeProvidedType customTypes
+                        | xs -> Reflection.FSharpType.MakeTupleType [| for x in xs -> x.MakeProvidedType customTypes |]
 
                 Some {
                     Single =
@@ -379,7 +358,7 @@ type internal QuotationsFactory () =
                             ProvidedTypeBuilder.MakeGenericType (typedefof<LazySeq<_>>, [ providedRowType ])
                         else
                             ProvidedTypeBuilder.MakeGenericType (typedefof<_ list>, [ providedRowType ])
-                    PerRow = Some { Provided = providedRowType; ErasedTo = erasedToRowType } }
+                    RowProvidedType = Some providedRowType }
 
         { Type = statementType; Sql = sql; ReturnType = returnType }
 
@@ -440,9 +419,8 @@ type internal QuotationsFactory () =
 
     static member AddProvidedTypeToDeclaring resultType returnType columnCount (declaringType: ProvidedTypeDefinition) =
         if resultType = ResultType.Records then
-            returnType.PerRow
-            |> Option.filter (fun x -> x.Provided <> x.ErasedTo && columnCount > 1)
-            |> Option.iter (fun x -> declaringType.AddMember x.Provided)
+            returnType.RowProvidedType
+            |> Option.iter (fun x -> if columnCount > 1 then declaringType.AddMember x)
         elif resultType = ResultType.DataTable && not returnType.Single.IsPrimitive then
             returnType.Single |> declaringType.AddMember
 
@@ -452,10 +430,9 @@ type internal QuotationsFactory () =
         Expr.NewArray (typeof<ResultSetDefinition>,
             statements
             |> List.map (fun x ->
-                match x.ReturnType, x.Type with
-                | Some returnType, Query columns ->
-                    Expr.NewRecord (typeof<ResultSetDefinition>, [
-                        Expr.Call (typeof<Utils>.GetMethod (nameof Utils.GetType, BindingFlags.Static ||| BindingFlags.Public), [ Expr.Value returnType.SeqItemTypeName ])
+                match x.Type with
+                | Query columns ->
+                    Expr.Call (typeof<ResultSetDefinition>.GetMethod (nameof ResultSetDefinition.Create, BindingFlags.Static ||| BindingFlags.Public), [
                         Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr slimDataColumns)) ])
                 | _ ->
                     QuotationsFactory.EmptyResultSet))

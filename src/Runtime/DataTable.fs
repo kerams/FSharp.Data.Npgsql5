@@ -32,9 +32,12 @@ type CollectionType =
 
 [<EditorBrowsable(EditorBrowsableState.Never); NoEquality; NoComparison>]
 type ResultSetDefinition = {
+    ErasedRowType: System.Type
     ExpectedColumns: DataColumn[] }
 
     with
+        static member Create columns = { ErasedRowType = null; ExpectedColumns = columns }
+
         member x.IsErasableToTuple =
             x.ExpectedColumns.Length > 1 && x.ExpectedColumns.Length < 8
 

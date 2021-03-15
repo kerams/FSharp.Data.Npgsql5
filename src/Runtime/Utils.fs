@@ -41,7 +41,7 @@ type Utils () =
                 if resultSet.ExpectedColumns.Length = 1 then
                     Array.item 0
                 elif resultType = ResultType.Tuples then
-                    Reflection.FSharpValue.PreComputeTupleConstructor (typedefof<Tuple<_>>)
+                    Reflection.FSharpValue.PreComputeTupleConstructor (Utils.ToTupleType resultSet.ExpectedColumns)
                 else
                     box
             
@@ -62,27 +62,26 @@ type Utils () =
         fun x -> cache.GetOrAdd (x, factory)
 
     static let getRowToTupleReader =
-        let cache = ConcurrentDictionary<Type, Func<DbDataReader, obj>> ()
-        let getFieldValue = typeof<DbDataReader>.GetMethod "GetFieldValue"
-        let isDbNull = typeof<DbDataReader>.GetMethod "IsDBNull"
+        let cache = ConcurrentDictionary<int, Func<DbDataReader, obj>> ()
 
-        fun (typ, resultSet) ->
-            match cache.TryGetValue typ with
-            | true, func -> func
-            | _ ->
+        fun resultSet ->
+            let mutable func = Unchecked.defaultof<_>
+            if cache.TryGetValue (resultSet.ExpectedColumns.GetHashCode (), &func) then
+                func
+            else
                 let func =
                     let param = Expression.Parameter typeof<DbDataReader>
                     let expr =
                         Expression.Lambda<Func<DbDataReader, obj>> (
                             Expression.New (
-                                typ.GetConstructor (typ.GetGenericArguments ()),
+                                resultSet.ErasedRowType.GetConstructor (resultSet.ErasedRowType.GetGenericArguments ()),
                                 resultSet.ExpectedColumns |> Array.indexed |> Array.sortBy (fun (_, c) -> c.ColumnName) |> Array.map (fun (i, c) ->
-                                    let v = Expression.Call (param, getFieldValue.MakeGenericMethod c.DataType, Expression.Constant i)
+                                    let v = Expression.Call (param, typeof<DbDataReader>.GetMethod("GetFieldValue").MakeGenericMethod c.DataType, Expression.Constant i)
 
                                     if c.AllowDBNull then
-                                        Expression.IfThenElse (
-                                            Expression.Call (param, isDbNull, Expression.Constant i),
-                                            Expression.New (typedefof<_ option>.MakeGenericType(c.DataType).GetConstructor [| |]),
+                                        Expression.Condition (
+                                            Expression.Call (param, typeof<DbDataReader>.GetMethod "IsDBNull", Expression.Constant i),
+                                            Expression.Constant (null, typedefof<_ option>.MakeGenericType c.DataType),
                                             Expression.New (typedefof<_ option>.MakeGenericType(c.DataType).GetConstructor [| c.DataType |], v)) :> Expression
                                     else
                                         v :> Expression)),
@@ -90,7 +89,7 @@ type Utils () =
 
                     expr.Compile ()
 
-                cache.[typ] <- func
+                cache.[resultSet.ExpectedColumns.GetHashCode ()] <- func
                 func
 
     static member ResizeArrayToList ra =
@@ -112,7 +111,7 @@ type Utils () =
         let mi = typeof<NpgsqlDataReader>.GetProperty("StatementIndex", Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetMethod
         Delegate.CreateDelegate (typeof<Func<NpgsqlDataReader, int>>, mi) :?> Func<NpgsqlDataReader, int>
 
-    static member val EmptyResultSet = { ExpectedColumns = [||] }
+    static member val EmptyResultSet = { ErasedRowType = null; ExpectedColumns = [||] }
 
     static member ToSqlParam (name, dbType: NpgsqlTypes.NpgsqlDbType, size, scale, precision) = 
         NpgsqlParameter (name, dbType, size, Scale = scale, Precision = precision)
@@ -141,8 +140,12 @@ type Utils () =
                 let t = Type.GetType (typeName + ", FSharp.Core")
 
                 if isNull t then
-                    //todo nettopology
-                    Type.GetType (typeName + ", Npgsql", true)
+                    let t = Type.GetType (typeName + ", Npgsql")
+
+                    if isNull t then
+                        Type.GetType (typeName + ", NetTopologySuite", true)
+                    else
+                        t
                 else
                     t
             else
@@ -179,20 +182,23 @@ type Utils () =
         x.ExtendedProperties.Add (SchemaTableColumn.BaseTableName, baseTableName)
         x
 
+    static member ToTupleType (columns: DataColumn[]) =
+        Reflection.FSharpType.MakeTupleType (columns |> Array.map (fun c -> if c.AllowDBNull then typedefof<_ option>.MakeGenericType c.DataType else c.DataType))
+
     static member ToDataColumnSlim (stringValues: string) =
         let [| columnName; typeName; nullable |] = stringValues.Split '|'
         new DataColumn (columnName, Utils.GetType typeName, AllowDBNull = (nullable = "1"))
 
     static member NoBoxingMapRowValues<'TItem> (cursor: DbDataReader, resultSet) = Unsafe.uply {
         let results = ResizeArray<'TItem> ()
-        let rowReader = getRowToTupleReader (typeof<'TItem>, resultSet)
+        let rowReader = getRowToTupleReader resultSet
         
         let! go = cursor.ReadAsync ()
         let mutable go = go
 
         while go do
             rowReader.Invoke cursor
-            |> unbox<'TItem>
+            |> unbox
             |> results.Add
 
             let! cont = cursor.ReadAsync ()
@@ -201,7 +207,7 @@ type Utils () =
         return results }
 
     static member MapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet: ResultSetDefinition) =
-        if resultSet.IsErasableToTuple then Utils.NoBoxingMapRowValues<'TItem> (cursor, resultSet) else Unsafe.uply {
+        if resultType = ResultType.Records && resultSet.IsErasableToTuple then Utils.NoBoxingMapRowValues<'TItem> (cursor, resultSet) else Unsafe.uply {
             let rowMapping, columnMappings = getRowAndColumnMappings (resultType, resultSet)
             let results = ResizeArray<'TItem> ()
             let values = Array.zeroCreate cursor.FieldCount

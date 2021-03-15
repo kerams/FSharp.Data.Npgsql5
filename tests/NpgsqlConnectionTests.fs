@@ -4,6 +4,10 @@ open System
 open Xunit
 open FSharp.Data.Npgsql
 open System.Reflection
+open type Npgsql.NpgsqlNetTopologySuiteExtensions
+open NetTopologySuite.Geometries
+
+Npgsql.NpgsqlConnection.GlobalTypeMapper.UseNetTopologySuite () |> ignore
 
 let isStatementPrepared (connection: Npgsql.NpgsqlConnection) =
     let pool = typeof<Npgsql.NpgsqlConnection>.GetProperty("Pool", BindingFlags.NonPublic ||| BindingFlags.Instance).GetValue(connection)

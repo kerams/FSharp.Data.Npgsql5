@@ -2,18 +2,16 @@
 
 open System
 open System.Data
-
 open FSharp.Quotations
 open ProviderImplementation.ProvidedTypes
-
 open Npgsql
-
 open FSharp.Data.Npgsql
 open InformationSchema
 open System.Collections.Concurrent
+open System.Reflection
 
 let methodsCache = ConcurrentDictionary<string, ProvidedMethod> ()
-let typeCache = ConcurrentDictionary<string, ProvidedTypeDefinition * Type> ()
+let typeCache = ConcurrentDictionary<string, ProvidedTypeDefinition> ()
 let schemaCache = ConcurrentDictionary<string, DbSchemaLookups> ()
 
 let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, commands: ProvidedTypeDefinition, customTypes: Map<string, ProvidedTypeDefinition>,
@@ -74,21 +72,15 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                 QuotationsFactory.AddTopLevelTypes cmdProvidedType parameters resultType methodTypes customTypes statements
                     (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType)
 
-                let useNetTopologySuite = 
-                    (parameters |> List.exists (fun p -> p.DataType.ClrType = typeof<NetTopologySuite.Geometries.Geometry>))
-                    ||
-                    (statements |> List.choose (fun s -> match s.Type with Query cols -> Some cols | _ -> None) |> List.concat |> List.exists (fun c -> c.ClrType = typeof<NetTopologySuite.Geometries.Geometry>))
-
                 let designTimeConfig = 
                     Expr.Lambda (Var ("x", typeof<unit>),
-                        Expr.NewRecord (typeof<DesignTimeConfig>, [
+                        Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
                             Expr.Value (sqlStatement.Trim ())
                             QuotationsFactory.ToSqlParamsExpr parameters
                             Expr.Value resultType
                             Expr.Value collectionType
                             Expr.Value singleRow
                             QuotationsFactory.BuildResultSetDefinitionsExpr (statements, resultType <> ResultType.DataTable)
-                            Expr.Value useNetTopologySuite
                             Expr.Value prepare
                         ]))
 
@@ -198,7 +190,7 @@ let createRootType (assembly, nameSpace: string, typeName, connectionString, xct
     let providedTypeReuse = if reuseProvidedTypes then WithCache typeCache else NoReuse
     addCreateCommandMethod (connectionString, databaseRootType, commands, customTypes, schemaLookups, xctor, prepare, providedTypeReuse, methodTypes, collectionType)
 
-    databaseRootType, typeof<obj>
+    databaseRootType
 
 let internal getProviderType (assembly, nameSpace) = 
 
@@ -213,7 +205,7 @@ let internal getProviderType (assembly, nameSpace) =
             ProvidedStaticParameter("MethodTypes", typeof<MethodTypes>, MethodTypes.Sync ||| MethodTypes.Async)
             ProvidedStaticParameter("CollectionType", typeof<CollectionType>, CollectionType.List)
         ],
-        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4], unbox args.[5])) |> fst)
+        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4], unbox args.[5])))
 
     providerType.AddXmlDoc """
 <summary>Typed access to PostgreSQL programmable objects, tables and functions.</summary> 
