@@ -1083,6 +1083,6 @@ let ``NetTopology.Geometry roundtrip works record single row`` () =
 let ``NetTopology.Geometry roundtrip works tuple`` () =
     let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
     use cmd = DvdRentalWithTypeReuse.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg", ResultType = ResultType.Tuples>(connectionString)
-    let res = cmd.Execute(input).Head |> fst |> Option.get
+    let res, _, _ = cmd.Execute(input).Head
     
-    Assert.Equal (input.Coordinate.X, res.Coordinate.X)
+    Assert.Equal (input.Coordinate.X, res.Value.Coordinate.X)
