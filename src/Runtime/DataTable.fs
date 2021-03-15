@@ -33,11 +33,8 @@ type CollectionType =
 [<EditorBrowsable(EditorBrowsableState.Never); NoEquality; NoComparison>]
 type ResultSetDefinition = {
     ErasedRowType: System.Type
-    ExpectedColumns: DataColumn[] }
-
-    with
-        member x.CanBeReadWithoutBoxing resultType =
-            (resultType = ResultType.Records || resultType = ResultType.Tuples) && x.ExpectedColumns.Length > 1 && x.ExpectedColumns.Length < 8
+    ExpectedColumns: DataColumn[]
+    IsErasedToShortTuple: bool }
 
 type LazySeq<'a> (s: 'a seq, reader: Common.DbDataReader, cmd: NpgsqlCommand) =
     member val Seq = s

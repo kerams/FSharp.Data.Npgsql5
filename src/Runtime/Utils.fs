@@ -64,7 +64,7 @@ type Utils () =
     static let getRowToTupleReader =
         let cache = ConcurrentDictionary<int, Func<DbDataReader, obj>> ()
 
-        fun (resultSet, sortColumns) ->
+        fun resultSet sortColumns ->
             let mutable func = Unchecked.defaultof<_>
             if cache.TryGetValue (resultSet.ExpectedColumns.GetHashCode (), &func) then
                 func
@@ -129,20 +129,21 @@ type Utils () =
         c
 
     static member CreateResultSetDefinition (columns: DataColumn[], resultType) =
-        let t =
+        let t, erasedToShortTuple =
             match columns with
-            | [||] -> typeof<int>
-            | [| c |] -> if c.AllowDBNull then typedefof<_ option>.MakeGenericType c.DataType else c.DataType
+            | [||] -> typeof<int>, false
+            | [| c |] -> if c.AllowDBNull then typedefof<_ option>.MakeGenericType c.DataType, false else c.DataType, false
             | _ ->
                 match resultType with
                 | ResultType.Records ->
                     if columns.Length > 1 && columns.Length < 8 then
-                        Utils.ToTupleType (columns |> Array.sortBy (fun c -> c.ColumnName))
+                        Utils.ToTupleType (columns |> Array.sortBy (fun c -> c.ColumnName)), true
                     else
-                        typeof<obj[]>
-                | ResultType.Tuples -> Utils.ToTupleType columns
-                | _ -> null
-        { ErasedRowType = t; ExpectedColumns = columns }
+                        typeof<obj[]>, false
+                | ResultType.Tuples -> Utils.ToTupleType columns, columns.Length > 1 && columns.Length < 8
+                | _ -> null, false
+
+        { ErasedRowType = t; ExpectedColumns = columns; IsErasedToShortTuple = erasedToShortTuple }
 
     static member GetType typeName = 
         if isNull typeName then
@@ -205,7 +206,7 @@ type Utils () =
 
     static member NoBoxingMapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet) = Unsafe.uply {
         let results = ResizeArray<'TItem> ()
-        let rowReader = getRowToTupleReader (resultSet, resultType = ResultType.Records)
+        let rowReader = getRowToTupleReader resultSet (resultType = ResultType.Records)
         
         let! go = cursor.ReadAsync ()
         let mutable go = go
@@ -222,14 +223,16 @@ type Utils () =
 
     static member NoBoxingMapRowValuesLazy<'TItem> (cursor: DbDataReader, resultType, resultSet) =
         seq {
-            let rowReader = getRowToTupleReader (resultSet, resultType = ResultType.Records)
+            let rowReader = getRowToTupleReader resultSet (resultType = ResultType.Records)
 
             while cursor.Read () do
                 rowReader.Invoke cursor |> unbox<'TItem>
         }
 
     static member MapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet: ResultSetDefinition) =
-        if resultSet.CanBeReadWithoutBoxing resultType then Utils.NoBoxingMapRowValues<'TItem> (cursor, resultType, resultSet) else Unsafe.uply {
+        if resultSet.IsErasedToShortTuple then
+            Utils.NoBoxingMapRowValues<'TItem> (cursor, resultType, resultSet)
+        else Unsafe.uply {
             let rowMapping, columnMappings = getRowAndColumnMappings (resultType, resultSet)
             let results = ResizeArray<'TItem> ()
             let values = Array.zeroCreate cursor.FieldCount
