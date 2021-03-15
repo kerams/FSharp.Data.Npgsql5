@@ -31,40 +31,14 @@ type DesignTimeConfig = {
     Prepare: bool
 }
     with
-        static member Create (sql, ps, resultType, collection, singleRow, resultSets, prep) = {
-            SqlStatement = sql;
-            Parameters = ps;
-            ResultType = resultType;
-            CollectionType = collection;
-            SingleRow = singleRow;
-            ResultSets = resultSets |> Array.map (fun (r: ResultSetDefinition) ->
-                let t =
-                    match resultType with
-                    | ResultType.Records ->
-                        if r.IsErasableToTuple then
-                            Utils.ToTupleType (r.ExpectedColumns |> Array.sortBy (fun c -> c.ColumnName))
-                        elif r.ExpectedColumns.Length = 1 then
-                            if r.ExpectedColumns.[0].AllowDBNull then
-                                typedefof<_ option>.MakeGenericType r.ExpectedColumns.[0].DataType
-                            else
-                                r.ExpectedColumns.[0].DataType
-                        elif r.ExpectedColumns.Length = 0 then
-                            typeof<int32>
-                        else
-                            typeof<obj[]>
-                    | ResultType.Tuples ->
-                        if r.ExpectedColumns.Length = 1 then
-                            if r.ExpectedColumns.[0].AllowDBNull then
-                                typedefof<_ option>.MakeGenericType r.ExpectedColumns.[0].DataType
-                            else
-                                r.ExpectedColumns.[0].DataType
-                        elif r.ExpectedColumns.Length = 0 then
-                            typeof<int32>
-                        else
-                            Utils.ToTupleType r.ExpectedColumns
-                    | _ -> null
-                { r with ErasedRowType = t });
-           Prepare = prep }
+        static member Create (sql, ps, resultType, collection, singleRow, (columns: DataColumn[][]), prepare) = {
+            SqlStatement = sql
+            Parameters = ps
+            ResultType = resultType
+            CollectionType = collection
+            SingleRow = singleRow
+            ResultSets = columns |> Array.map (fun r -> CreateResultSetDefinition (r, resultType))
+            Prepare = prepare }
 
 [<EditorBrowsable(EditorBrowsableState.Never)>]
 type ISqlCommandImplementation (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig, connection, commandTimeout) =

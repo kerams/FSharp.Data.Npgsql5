@@ -80,7 +80,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                             Expr.Value resultType
                             Expr.Value collectionType
                             Expr.Value singleRow
-                            QuotationsFactory.BuildResultSetDefinitionsExpr (statements, resultType <> ResultType.DataTable)
+                            QuotationsFactory.BuildDataColumnsExpr (statements, resultType <> ResultType.DataTable)
                             Expr.Value prepare
                         ]))
 

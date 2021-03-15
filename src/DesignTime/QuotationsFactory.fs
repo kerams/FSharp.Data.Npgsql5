@@ -62,6 +62,10 @@ type internal QuotationsFactory () =
         let mi = typeof<Array>.GetMethod(nameof Array.Empty, BindingFlags.Static ||| BindingFlags.Public).MakeGenericMethod typeof<string * obj>
         Expr.Call (mi, [])
 
+    static member val DataColumnArrayEmptyExpr =
+        let mi = typeof<Array>.GetMethod(nameof Array.Empty, BindingFlags.Static ||| BindingFlags.Public).MakeGenericMethod typeof<DataColumn>
+        Expr.Call (mi, [])
+
     static member GetNullableValueFromDataRow (t: Type, name: string) (exprArgs: Expr list) =
         Expr.Call (typeof<Utils>.GetMethod(nameof Utils.GetNullableValueFromDataRow).MakeGenericMethod t, [
             exprArgs.[0]
@@ -122,9 +126,9 @@ type internal QuotationsFactory () =
             let isErasedToTuple = columns.Length < 8
             let baseType =
                 if isErasedToTuple then
-                    ProvidedTypeBuilder.MakeTupleType [ for x in columns |> List.sortBy (fun x -> x.Name) -> x.MakeProvidedType customTypes ]
+                    ProvidedTypeBuilder.MakeTupleType (columns |> List.sortBy (fun x -> x.Name) |> List.map (fun x -> x.MakeProvidedType customTypes))
                 else
-                    typeof<obj[]> //, typeof<obj[]>
+                    typeof<obj[]>
 
             let recordType = ProvidedTypeDefinition (typeName, baseType = Some baseType, hideObjectMethods = true)
             
@@ -424,18 +428,15 @@ type internal QuotationsFactory () =
         elif resultType = ResultType.DataTable && not returnType.Single.IsPrimitive then
             returnType.Single |> declaringType.AddMember
 
-    static member val EmptyResultSet = Expr.PropertyGet (typeof<Utils>.GetProperty (nameof Utils.EmptyResultSet, BindingFlags.Static ||| BindingFlags.Public), [])
-
-    static member BuildResultSetDefinitionsExpr (statements, slimDataColumns) =
-        Expr.NewArray (typeof<ResultSetDefinition>,
+    static member BuildDataColumnsExpr (statements, slimDataColumns) =
+        Expr.NewArray (typeof<DataColumn[]>,
             statements
             |> List.map (fun x ->
                 match x.Type with
                 | Query columns ->
-                    Expr.Call (typeof<ResultSetDefinition>.GetMethod (nameof ResultSetDefinition.Create, BindingFlags.Static ||| BindingFlags.Public), [
-                        Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr slimDataColumns)) ])
+                    Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr slimDataColumns))
                 | _ ->
-                    QuotationsFactory.EmptyResultSet))
+                    QuotationsFactory.DataColumnArrayEmptyExpr))
 
     static member AddTopLevelTypes (cmdProvidedType: ProvidedTypeDefinition) parameters resultType (methodTypes: MethodTypes) customTypes statements typeToAttachTo =
         let executeArgs = QuotationsFactory.GetExecuteArgs (parameters, customTypes)

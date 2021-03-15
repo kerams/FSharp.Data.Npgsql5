@@ -111,8 +111,6 @@ type Utils () =
         let mi = typeof<NpgsqlDataReader>.GetProperty("StatementIndex", Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetMethod
         Delegate.CreateDelegate (typeof<Func<NpgsqlDataReader, int>>, mi) :?> Func<NpgsqlDataReader, int>
 
-    static member val EmptyResultSet = { ErasedRowType = null; ExpectedColumns = [||] }
-
     static member ToSqlParam (name, dbType: NpgsqlTypes.NpgsqlDbType, size, scale, precision) = 
         NpgsqlParameter (name, dbType, size, Scale = scale, Precision = precision)
 
@@ -129,6 +127,36 @@ type Utils () =
             c.ExtendedProperties.Add (p.Key, p.Value)
 
         c
+
+    static member CreateResultSetDefinition (columns: DataColumn[], resultType) =
+        let isErasableToTuple = columns.Length > 1 && columns.Length < 8
+
+        let t =
+            match resultType with
+            | ResultType.Records ->
+                if isErasableToTuple then
+                    Utils.ToTupleType (columns |> Array.sortBy (fun c -> c.ColumnName))
+                elif columns.Length = 1 then
+                    if columns.[0].AllowDBNull then
+                        typedefof<_ option>.MakeGenericType columns.[0].DataType
+                    else
+                        columns.[0].DataType
+                elif columns.Length = 0 then
+                    typeof<int32>
+                else
+                    typeof<obj[]>
+            | ResultType.Tuples ->
+                if columns.Length = 1 then
+                    if columns.[0].AllowDBNull then
+                        typedefof<_ option>.MakeGenericType columns.[0].DataType
+                    else
+                        columns.[0].DataType
+                elif columns.Length = 0 then
+                    typeof<int32>
+                else
+                    Utils.ToTupleType columns
+            | _ -> null
+        { ErasedRowType = t; ExpectedColumns = columns }
 
     static member GetType typeName = 
         if isNull typeName then
