@@ -50,13 +50,13 @@ type internal QuotationsFactory () =
     static member val ToSqlParamsExpr =
         let mi = typeof<Utils>.GetMethod (nameof Utils.ToSqlParam, BindingFlags.Static ||| BindingFlags.Public)
         let miEmpty = typeof<Array>.GetMethod(nameof Array.Empty, BindingFlags.Static ||| BindingFlags.Public).MakeGenericMethod typeof<NpgsqlParameter>
-        fun (ps: Parameter list) ->
+        fun (ps: Parameter list, rawMode) ->
             if ps.IsEmpty then
                 Expr.Call (miEmpty, [])
             else
                 Expr.NewArray (typeof<NpgsqlParameter>, ps |> List.map (fun p ->
                     Expr.Call (mi,
-                        [ Expr.Value p.Name; Expr.Value p.NpgsqlDbType; Expr.Value (if p.DataType.IsFixedLength then 0 else p.MaxLength); Expr.Value p.Scale; Expr.Value p.Precision ])))
+                        [ Expr.Value (if rawMode then null else p.Name); Expr.Value p.NpgsqlDbType; Expr.Value (if p.DataType.IsFixedLength then 0 else p.MaxLength); Expr.Value p.Scale; Expr.Value p.Precision ])))
 
     static member val ParamArrayEmptyExpr =
         let mi = typeof<Array>.GetMethod(nameof Array.Empty, BindingFlags.Static ||| BindingFlags.Public).MakeGenericMethod typeof<string * obj>
@@ -86,7 +86,7 @@ type internal QuotationsFactory () =
     static member GetMapperFromOptionToObj (t: Type, value: Expr) =
         Expr.Call (typeof<Utils>.GetMethod(nameof Utils.OptionToObj).MakeGenericMethod t, [ Expr.Coerce (value, typeof<obj>) ])
 
-    static member AddGeneratedMethod (sqlParameters: Parameter list, executeArgs: ProvidedParameter list, erasedType, providedOutputType, name) =
+    static member AddGeneratedMethod (sqlParameters: Parameter list, executeArgs: ProvidedParameter list, erasedType, providedOutputType, name, rawMode) =
         let mappedInputParamValues (exprArgs: Expr list) = 
             (exprArgs.Tail, sqlParameters)
             ||> List.map2 (fun expr param ->
@@ -104,7 +104,7 @@ type internal QuotationsFactory () =
                         else
                             Expr.Value(Activator.CreateInstance(t), t)
 
-                Expr.NewTuple [ Expr.Value param.Name; Expr.Coerce (value, typeof<obj>) ])
+                Expr.NewTuple [ Expr.Value (if rawMode then null else param.Name); Expr.Coerce (value, typeof<obj>) ])
 
         let invokeCode exprArgs =
             let vals = mappedInputParamValues exprArgs
@@ -443,12 +443,12 @@ type internal QuotationsFactory () =
                 | _ ->
                     QuotationsFactory.DataColumnArrayEmptyExpr))
 
-    static member AddTopLevelTypes (cmdProvidedType: ProvidedTypeDefinition) parameters resultType (methodTypes: MethodTypes) customTypes statements typeToAttachTo =
+    static member AddTopLevelTypes (cmdProvidedType: ProvidedTypeDefinition) parameters resultType (methodTypes: MethodTypes) customTypes statements typeToAttachTo rawMode =
         let executeArgs = QuotationsFactory.GetExecuteArgs (parameters, customTypes)
         
         let addRedirectToISqlCommandMethods outputType xmlDoc =
             let add outputType name xmlDoc =
-                let m = QuotationsFactory.AddGeneratedMethod (parameters, executeArgs, cmdProvidedType.BaseType, outputType, name) 
+                let m = QuotationsFactory.AddGeneratedMethod (parameters, executeArgs, cmdProvidedType.BaseType, outputType, name, rawMode)
                 Option.iter m.AddXmlDoc xmlDoc
                 cmdProvidedType.AddMember m
 

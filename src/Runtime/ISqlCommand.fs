@@ -119,8 +119,9 @@ type ISqlCommandImplementation (commandNameHash: int, cfgBuilder: unit -> Design
                 cmd.Dispose ()
 
     static member internal SetParameters (cmd: NpgsqlCommand, parameters: (string * obj)[]) =
-        for name, value in parameters do
-            let p = cmd.Parameters.[name]
+        for i in 0 .. parameters.Length - 1 do
+            let name, value = parameters.[i]
+            let p = if isNull name then cmd.Parameters.[i] else cmd.Parameters.[name]
 
             if p.Direction.HasFlag ParameterDirection.Input then
                 p.Value <- if isNull value then DBNull.Value :> obj else value

@@ -43,7 +43,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                 if singleRow && not (resultType = ResultType.Records || resultType = ResultType.Tuples) then
                     invalidArg "SingleRow" "SingleRow can be set only for ResultType.Records or ResultType.Tuples."
 
-                let parameters, statements = InformationSchema.extractParametersAndOutputColumns(connectionString, sqlStatement, resultType, allParametersOptional, dbSchemaLookups)
+                let parameters, statements, rawMode = InformationSchema.extractParametersAndOutputColumns(connectionString, sqlStatement, resultType, allParametersOptional, dbSchemaLookups)
 
                 if collectionType = CollectionType.LazySeq && (resultType = ResultType.Records || resultType = ResultType.Tuples) && statements |> List.filter (fun (_, x) -> match x with Query _ -> true | _ -> false) |> List.length > 1 then
                     invalidArg "CollectionType" "LazySeq can only be used when the command returns a single result set. Use a different collection type or rewrite the command so that it returns just the result set that you want to load lazily."
@@ -70,13 +70,19 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                 commands.AddMember cmdProvidedType
                 
                 QuotationsFactory.AddTopLevelTypes cmdProvidedType parameters resultType methodTypes customTypes statements
-                    (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType)
+                    (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType) rawMode
 
+                let sqlStatement =
+                    if rawMode then
+                        parameters |> List.indexed |> List.fold (fun (currS: string) (i, param) -> currS.Replace("@" + param.Name, "$" + (i + 1).ToString())) sqlStatement
+                    else
+                        sqlStatement
+                    
                 let designTimeConfig = 
                     Expr.Lambda (Var ("x", typeof<unit>),
                         Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
                             Expr.Value (sqlStatement.Trim ())
-                            QuotationsFactory.ToSqlParamsExpr parameters
+                            QuotationsFactory.ToSqlParamsExpr (parameters, rawMode)
                             Expr.Value resultType
                             Expr.Value collectionType
                             Expr.Value singleRow

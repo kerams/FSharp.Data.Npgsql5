@@ -238,6 +238,10 @@ let inline openConnection connectionString =
 
 let controlCommandRegex = System.Text.RegularExpressions.Regex ("^\\s*\\b(begin|end|commit|rollback)\\b\\s*$", Text.RegularExpressions.RegexOptions.IgnoreCase)
 
+let getFinalCommandText =
+    let mi = typeof<NpgsqlBatchCommand>.GetProperty("FinalCommandText", BindingFlags.Instance ||| BindingFlags.NonPublic).GetMethod
+    Delegate.CreateDelegate (typeof<Func<NpgsqlBatchCommand, string>>, mi) :?> Func<NpgsqlBatchCommand, string>
+
 let extractParametersAndOutputColumns(connectionString, commandText, resultType, allParametersOptional, dbSchemaLookups : DbSchemaLookups) =
     use conn = openConnection(connectionString)
     
@@ -262,7 +266,7 @@ let extractParametersAndOutputColumns(connectionString, commandText, resultType,
             [ 0 .. cursor.Statements.Count - 1 ]
             |> List.map (fun i ->
                 // cursor.Statements.[i].Parameters
-                let sql = cursor.Statements.[i].CommandText
+                let sql = getFinalCommandText.Invoke cursor.Statements.[i]
                 match List.tryFind (fun (index, _) -> index = i) resultSetSchemasFromNpgsql with
                 | Some (_, columns) ->
                     sql, columns |> List.map (fun column -> 
@@ -293,6 +297,8 @@ let extractParametersAndOutputColumns(connectionString, commandText, resultType,
                     else
                         sql, NonQuery)
 
+    let rawMode = resultSets.Length = 1
+
     let parameters = 
         [ for p in cmd.Parameters ->
             assert (p.Direction = ParameterDirection.Input)
@@ -311,7 +317,7 @@ let extractParametersAndOutputColumns(connectionString, commandText, resultType,
               Optional = allParametersOptional 
               DataType = DataType.Create(p.PostgresType) } ]
 
-    parameters, resultSets
+    parameters, resultSets, rawMode
 
 let getDbSchemaLookups(connectionString) =
     use conn = openConnection(connectionString)
