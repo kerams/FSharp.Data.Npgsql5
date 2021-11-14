@@ -11,7 +11,7 @@
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsAsErrors>1182</WarningsAsErrors>
-    <NoWarn>FS0044</NoWarn>
+    <NoWarn>FS0044,FS3218</NoWarn>
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
