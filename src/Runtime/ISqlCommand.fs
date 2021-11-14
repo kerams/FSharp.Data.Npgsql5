@@ -306,7 +306,7 @@ type ISqlCommandImplementation (commandNameHash: int, cfgBuilder: unit -> Design
 
         mapTask (t, executionType)
 
-    static member internal SetNumberOfAffectedRows (results: obj[], statements: System.Collections.Generic.IReadOnlyList<NpgsqlStatement>) =
+    static member internal SetNumberOfAffectedRows (results: obj[], statements: System.Collections.Generic.IReadOnlyList<NpgsqlBatchCommand>) =
         for i in 0 .. statements.Count - 1 do
             if isNull results.[i] then
                 results.[i] <- int statements.[i].Rows |> box

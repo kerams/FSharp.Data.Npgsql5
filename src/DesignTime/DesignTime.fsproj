@@ -4,7 +4,6 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <AssemblyName>FSharp.Data.Npgsql.DesignTime</AssemblyName>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <DebugType>full</DebugType>
     <Deterministic>false</Deterministic>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -12,6 +11,7 @@
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsAsErrors>1182</WarningsAsErrors>
+    <NoWarn>FS0044</NoWarn>
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>

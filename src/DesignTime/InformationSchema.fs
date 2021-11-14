@@ -261,7 +261,8 @@ let extractParametersAndOutputColumns(connectionString, commandText, resultType,
 
             [ 0 .. cursor.Statements.Count - 1 ]
             |> List.map (fun i ->
-                let sql = cursor.Statements.[i].SQL.Trim ()
+                // cursor.Statements.[i].Parameters
+                let sql = cursor.Statements.[i].CommandText
                 match List.tryFind (fun (index, _) -> index = i) resultSetSchemasFromNpgsql with
                 | Some (_, columns) ->
                     sql, columns |> List.map (fun column -> 
