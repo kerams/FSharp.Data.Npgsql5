@@ -11,7 +11,7 @@ Npgsql.NpgsqlConnection.GlobalTypeMapper.UseNetTopologySuite () |> ignore
 
 let isStatementPrepared (connection: Npgsql.NpgsqlConnection) =
     let pool = typeof<Npgsql.NpgsqlConnection>.GetProperty("Pool", BindingFlags.NonPublic ||| BindingFlags.Instance).GetValue(connection)
-    let connectors = pool.GetType().GetField("_connectors", BindingFlags.NonPublic ||| BindingFlags.Instance).GetValue(pool) :?> obj[]
+    let connectors = pool.GetType().GetField("Connectors", BindingFlags.NonPublic ||| BindingFlags.Instance).GetValue(pool) :?> obj[]
 
     let mutable count = 0
 
