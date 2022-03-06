@@ -1,3 +1,6 @@
+### 2.0.0 - March 6th, 2022
+- Require Npgsql 6 and use the new [raw mode](https://www.roji.org/parameters-batching-and-sql-rewriting) when a command consists of a single statement
+
 ### 1.1.0 - March 17th, 2021
 - Rows for `ResultType.Record` are now erased to a tuple instead of `obj[]`. This results in faster property access and makes it possible to read value types from Npgsql with fewer allocations.
 - Users of PostGIS are now required to set up a global type mapper for NetTopologySuite in their startup code.

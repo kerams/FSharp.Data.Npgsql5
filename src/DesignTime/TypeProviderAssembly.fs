@@ -15,11 +15,6 @@ type NpgsqlProviders(config) as this =
         // register extension mappings
         Npgsql.NpgsqlConnection.GlobalTypeMapper.UseNetTopologySuite() |> ignore
     
-        this.Disposing.Add (fun _ ->
-            NpgsqlConnectionProvider.methodsCache.Clear ()
-            NpgsqlConnectionProvider.typeCache.Clear ()
-            NpgsqlConnectionProvider.schemaCache.Clear ())
-
         let assembly = Assembly.GetExecutingAssembly()
         let assemblyName = assembly.GetName().Name
         let nameSpace = this.GetType().Namespace
