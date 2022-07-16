@@ -1,3 +1,6 @@
+### 2.1.0 - July 16th, 2022
+- Allow the use of Npgsql 7
+
 ### 2.0.0 - March 6th, 2022
 - Require Npgsql 6 and use the new [raw mode](https://www.roji.org/parameters-batching-and-sql-rewriting) when a command consists of a single statement
 
