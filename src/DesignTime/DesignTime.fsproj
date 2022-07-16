@@ -10,8 +10,7 @@
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <WarningsAsErrors>1182</WarningsAsErrors>
-    <NoWarn>FS0044,FS3218</NoWarn>
+    <NoWarn>FS0044,FS3218,FS0026</NoWarn>
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
