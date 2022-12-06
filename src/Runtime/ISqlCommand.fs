@@ -254,13 +254,14 @@ type ISqlCommandImplementation (commandNameHash: int, cfgBuilder: unit -> Design
                 mapTask (xs, executionType)
 
     static member private ReadResultSet (cursor: Common.DbDataReader, resultSetDefinition, cfg) =
-        ISqlCommandImplementation.VerifyOutputColumns(cursor, resultSetDefinition.ExpectedColumns)
-        
         let func =
             let mutable x = Unchecked.defaultof<_>
             if executeSingleCache.TryGetValue (resultSetDefinition.ErasedRowType, &x) then
                 x
             else
+                // Verifying the output columns are as expected only during the first call
+                // In a clustered DB environment, instances can theoretically differ in this regard, but it's too much of an edge case to have this check on every call
+                ISqlCommandImplementation.VerifyOutputColumns(cursor, resultSetDefinition.ExpectedColumns)
                 let func = 
                     typeof<ISqlCommandImplementation>
                         .GetMethod(nameof ISqlCommandImplementation.ExecuteSingle, BindingFlags.NonPublic ||| BindingFlags.Static)
