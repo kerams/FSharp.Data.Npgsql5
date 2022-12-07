@@ -170,18 +170,18 @@ let dateTableWithUpdate() =
     Assert.Equal(1, t.Rows.Count)
     let r = t.Rows.[0]
     let return_date = r.return_date
-    let rowsAffected = ref 0
+    let mutable rowsAffected = 0
     try
         let new_return_date = Some DateTime.Now.Date
         r.return_date <- new_return_date
-        rowsAffected := t.Update(connectionString)
-        Assert.Equal(1, !rowsAffected)
+        rowsAffected <- t.Update(connectionString)
+        Assert.Equal(1, rowsAffected)
 
         use cmd = DvdRental.CreateCommand<getRentalById>(connectionString)
         Assert.Equal( new_return_date, cmd.Execute( rental_id) |> Seq.exactlyOne ) 
 
     finally
-        if !rowsAffected = 1
+        if rowsAffected = 1
         then 
             r.return_date <- return_date
             t.Update(connectionString) |>  ignore      
