@@ -415,16 +415,13 @@ type internal QuotationsFactory () =
                     ProvidedParameter(parameterName, parameterType = t)
         ]
 
-    static member val ConnectionUcis = Reflection.FSharpType.GetUnionCases typeof<Choice<string, NpgsqlConnection * NpgsqlTransaction>>
-
     static member GetCommandFactoryMethod (cmdProvidedType: ProvidedTypeDefinition, designTimeConfig, isExtended, methodName, sqlStatement: string) = 
         let ctorImpl = typeof<ISqlCommandImplementation>.GetConstructors() |> Array.exactlyOne
 
         if isExtended then
-            let body (Arg3(connection, transaction, commandTimeout)) =
-                let cmd = Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlCommand), [ Expr.Value sqlStatement; commandTimeout ])
-                let arguments = [ Expr.Value (cmdProvidedType.Name.GetHashCode()); designTimeConfig; Expr.NewUnionCase (QuotationsFactory.ConnectionUcis.[1], [ Expr.NewTuple [ connection; transaction ] ]); cmd ]
-                Expr.NewObject (ctorImpl, arguments)
+            let body (Arg3 (conn, tran, commandTimeout)) =
+                let cmd = Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlCommandXCtor), [ conn; tran; Expr.Value sqlStatement; commandTimeout ])
+                Expr.NewObject (ctorImpl, [ Expr.Value (cmdProvidedType.Name.GetHashCode()); designTimeConfig; cmd ])
 
             let parameters = [
                 ProvidedParameter("connection", typeof<NpgsqlConnection>) 
@@ -433,9 +430,9 @@ type internal QuotationsFactory () =
 
             ProvidedMethod (methodName, parameters, cmdProvidedType, body, true)
         else
-            let body (args: _ list) =
-                let cmd = Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlCommand), [ Expr.Value sqlStatement; args.[1] ])
-                Expr.NewObject (ctorImpl, [ Expr.Value (cmdProvidedType.Name.GetHashCode()); designTimeConfig; Expr.NewUnionCase (QuotationsFactory.ConnectionUcis.[0], [ args.Head ]); cmd ])
+            let body (args: Expr list) =
+                let cmd = Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlCommand), [ args.[0]; Expr.Value sqlStatement; args.[1] ])
+                Expr.NewObject (ctorImpl, [ Expr.Value (cmdProvidedType.Name.GetHashCode()); designTimeConfig; cmd ])
 
             let parameters = [
                 ProvidedParameter("connectionString", typeof<string>)

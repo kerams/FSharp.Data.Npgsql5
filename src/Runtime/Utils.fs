@@ -105,8 +105,14 @@ type Utils () =
     static member NpgsqlParameter (name, dbType: NpgsqlDbType, size, scale, precision, value: obj) = 
         NpgsqlParameter (name, dbType, size, Scale = scale, Precision = precision, Value = value)
 
-    static member NpgsqlCommand (sql, timeout) =
-        let cmd = new NpgsqlCommand (sql)
+    static member NpgsqlCommand (cs, sql, timeout) =
+        let cmd = new NpgsqlCommand (sql, new NpgsqlConnection (cs))
+        cmd.CommandTimeout <- timeout
+        cmd
+
+    static member NpgsqlCommandXCtor (conn, tran, sql, timeout) =
+        let cmd = new NpgsqlCommand (sql, conn)
+        cmd.Transaction <- tran
         cmd.CommandTimeout <- timeout
         cmd
 
