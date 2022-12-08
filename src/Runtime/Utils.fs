@@ -78,6 +78,11 @@ type Utils () =
                 cache.[resultSet.ExpectedColumns.GetHashCode ()] <- func
                 func
 
+    static member UnwrapOptionToDb z =
+        match z with
+        | Some z -> box z
+        | _ -> box DBNull.Value
+
     static member ResizeArrayToList ra =
         let rec inner (ra: ResizeArray<'a>, index, acc) = 
             if index = 0 then
@@ -97,8 +102,13 @@ type Utils () =
         let mi = typeof<NpgsqlDataReader>.GetProperty("StatementIndex", Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetMethod
         Delegate.CreateDelegate (typeof<Func<NpgsqlDataReader, int>>, mi) :?> Func<NpgsqlDataReader, int>
 
-    static member ToSqlParam (name, dbType: NpgsqlTypes.NpgsqlDbType, size, scale, precision) = 
-        NpgsqlParameter (name, dbType, size, Scale = scale, Precision = precision)
+    static member NpgsqlParameter (name, dbType: NpgsqlDbType, size, scale, precision, value: obj) = 
+        NpgsqlParameter (name, dbType, size, Scale = scale, Precision = precision, Value = value)
+
+    static member NpgsqlCommand (sql, timeout) =
+        let cmd = new NpgsqlCommand (sql)
+        cmd.CommandTimeout <- timeout
+        cmd
 
     static member CloneDataColumn (column: DataColumn) =
         let c = new DataColumn (column.ColumnName, column.DataType)

@@ -251,8 +251,9 @@ let dateTableWithUpdateWithConflictOptionCompareAllSearchableValues() =
 let deleteWithTx() =
     let rental_id = 2
 
-    use cmd = DvdRental.CreateCommand<getRentalById>(connectionString)
-    Assert.Equal(1, cmd.Execute( rental_id) |> Seq.length) 
+    let cmd () = DvdRental.CreateCommand<getRentalById>(connectionString)
+    use cmd1 = cmd ()
+    Assert.Equal(1, cmd1.Execute( rental_id) |> Seq.length) 
 
     do 
         use conn = openConnection()
@@ -266,7 +267,8 @@ let deleteWithTx() =
         Assert.Empty( DvdRental.CreateCommand<getRentalById, XCtor = true>(conn, tran).Execute( rental_id)) 
 
 
-    Assert.Equal(1, cmd.Execute( rental_id) |> Seq.length) 
+    use cmd2 = cmd ()
+    Assert.Equal(1, cmd2.Execute( rental_id) |> Seq.length) 
     
 [<Fact>]
 let ``Select from partitioned table``() =
@@ -309,20 +311,21 @@ let selectEnumWithArray() =
 
 [<Fact>]
 let allParametersOptional() =
-    let cmd = 
+    let cmd () = 
         DvdRental.CreateCommand<"
             SELECT coalesce(@x, 'Empty') AS x
         ", AllParametersOptional = true, SingleRow = true>(connectionString)
-    Assert.Equal(Some( Some "test"), cmd.Execute(Some "test")) 
-    Assert.Equal(Some( Some "Empty"), cmd.Execute()) 
+    Assert.Equal(Some( Some "test"), cmd().Execute(Some "test")) 
+    Assert.Equal(Some( Some "Empty"), cmd().Execute()) 
 
 [<Fact>]
 let tableInsert() =
     
     let rental_id = 2
     
-    use cmd = DvdRental.CreateCommand<"SELECT * FROM rental WHERE rental_id = @rental_id", SingleRow = true>(connectionString)  
-    let x = cmd.AsyncExecute(rental_id) |> Async.RunSynchronously |> Option.get
+    let cmd () = DvdRental.CreateCommand<"SELECT * FROM rental WHERE rental_id = @rental_id", SingleRow = true>(connectionString)  
+    use cmd1 = cmd ()
+    let x = cmd1.AsyncExecute(rental_id) |> Async.RunSynchronously |> Option.get
         
     use conn = openConnection()
     use tran = conn.BeginTransaction()
@@ -350,15 +353,17 @@ let tableInsert() =
 
     tran.Rollback()
 
-    Assert.Equal(None, cmd.Execute(r.rental_id))
+    use cmd2 = cmd ()
+    Assert.Equal(None, cmd2.Execute(r.rental_id))
 
 [<Fact>]
 let tableInsertViaAddRow() =
     
     let rental_id = 2
     
-    use cmd = DvdRental.CreateCommand<"SELECT * FROM rental WHERE rental_id = @rental_id", SingleRow = true>(connectionString)  
-    let x = cmd.AsyncExecute(rental_id) |> Async.RunSynchronously |> Option.get
+    let cmd () = DvdRental.CreateCommand<"SELECT * FROM rental WHERE rental_id = @rental_id", SingleRow = true>(connectionString)
+    use cmd1 = cmd ()
+    let x = cmd1.AsyncExecute(rental_id) |> Async.RunSynchronously |> Option.get
         
     use conn = openConnection()
     use tran = conn.BeginTransaction()
@@ -387,7 +392,8 @@ let tableInsertViaAddRow() =
 
     tran.Rollback()
 
-    Assert.Equal(None, cmd.Execute(r.rental_id))
+    use cmd2 = cmd ()
+    Assert.Equal(None, cmd2.Execute(r.rental_id))
   
 [<Fact>]
 let selectEnumWithArray2() =
@@ -684,7 +690,7 @@ let ``Records command prepared``() =
     conn.UnprepareAll()
 
     use cmd = DvdRental.CreateCommand<getActorByName, XCtor = true, Prepare = true, ResultType = ResultType.Records>(conn)
-    cmd.Execute("", "") |> ignore
+    cmd.Execute("1", "2") |> ignore
 
     Assert.True(isStatementPrepared conn)
 
@@ -705,6 +711,26 @@ let ``Two selects record``() =
     Assert.Equal (5, actual.ResultSet1 |> List.map (fun x -> x.first_name) |> List.length)
     Assert.Equal (5, actual.ResultSet2 |> List.map (fun x -> x.title) |> List.length)
     
+[<Fact>]
+let ``Two selects record2``() =
+    use cmd = DvdRental.CreateCommand<"select actor_id as id, first_name as name, @arr::integer[] from actor where actor_id % @mod = 0 and @f::boolean order by id limit 5; select title as name, film_id as id, @arr::integer[] from film where @f::boolean and film_id % @mod = 0 order by id limit 5">(connectionString)
+    let arr = [| 9; 6 |]
+    let actual = cmd.Execute(arr, 2, true)
+    Assert.Equal ("Nick", actual.ResultSet1.[0].name)
+    Assert.Equal ("Ace Goldfinger", actual.ResultSet2.[0].name)
+    Assert.Equal<int> (arr, actual.ResultSet1.[0].int4.Value)
+    Assert.Equal<int> (arr, actual.ResultSet2.[0].int4.Value)
+
+[<Fact>]
+let ``Two selects record3``() =
+    use cmd = DvdRentalWithTypeReuse.CreateCommand<"select actor_id as id, first_name as name, @arr::integer[] from actor where actor_id % @mod = 0 and @f::boolean order by id limit 5; select title as name, film_id as id, @arr::integer[] from film where @f::boolean and film_id % @mod = 0 order by id limit 5">(connectionString)
+    let arr = [| 9; 6 |]
+    let actual = cmd.Execute(arr, 2, true)
+    Assert.Equal ("Nick", actual.ResultSet1.[0].name)
+    Assert.Equal ("Ace Goldfinger", actual.ResultSet2.[0].name)
+    Assert.Equal<int> (arr, actual.ResultSet1.[0].int4.Value)
+    Assert.Equal<int> (arr, actual.ResultSet2.[0].int4.Value)
+
 [<Fact>]
 let ``Queries against system catalogs work``() =
     use cmd = DvdRental.CreateCommand<"SELECT * FROM pg_timezone_names">(connectionString)

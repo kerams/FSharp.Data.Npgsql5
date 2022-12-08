@@ -68,21 +68,19 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
 
                 let cmdProvidedType = ProvidedTypeDefinition (commandTypeName, Some typeof<ISqlCommandImplementation>, hideObjectMethods = true)
                 commands.AddMember cmdProvidedType
-                
+
                 QuotationsFactory.AddTopLevelTypes cmdProvidedType parameters resultType methodTypes customTypes statements
                     (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType) rawMode
 
                 let sqlStatement =
                     if rawMode then
-                        parameters |> List.indexed |> List.fold (fun (currS: string) (i, param) -> currS.Replace("@" + param.Name, "$" + (i + 1).ToString())) sqlStatement
+                        (parameters |> List.indexed |> List.fold (fun (currS: string) (i, param) -> currS.Replace("@" + param.Name, "$" + (i + 1).ToString())) sqlStatement).Trim ()
                     else
-                        sqlStatement
-                    
+                        sqlStatement.Trim ()
+
                 let designTimeConfig = 
                     Expr.Lambda (Var ("x", typeof<unit>),
                         Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
-                            Expr.Value (sqlStatement.Trim ())
-                            QuotationsFactory.ToSqlParamsExpr (parameters, rawMode)
                             Expr.Value resultType
                             Expr.Value collectionType
                             Expr.Value singleRow
@@ -90,7 +88,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                             Expr.Value prepare
                         ]))
 
-                let method = QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, designTimeConfig, xctor, methodName)
+                let method = QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, designTimeConfig, xctor, methodName, sqlStatement)
                 rootType.AddMember method
                 method)
     ))

@@ -47,21 +47,6 @@ type internal QuotationsFactory () =
         let mi = typeof<Unit>.Assembly.GetType("Microsoft.FSharp.Core.LanguagePrimitives+IntrinsicFunctions").GetMethod("GetArray").MakeGenericMethod typeof<obj>
         fun (arrayExpr, index) -> Expr.Call (mi, [ arrayExpr; Expr.Value index ])
 
-    static member val ToSqlParamsExpr =
-        let mi = typeof<Utils>.GetMethod (nameof Utils.ToSqlParam, BindingFlags.Static ||| BindingFlags.Public)
-        let miEmpty = typeof<Array>.GetMethod(nameof Array.Empty, BindingFlags.Static ||| BindingFlags.Public).MakeGenericMethod typeof<NpgsqlParameter>
-        fun (ps: Parameter list, rawMode) ->
-            if ps.IsEmpty then
-                Expr.Call (miEmpty, [])
-            else
-                Expr.NewArray (typeof<NpgsqlParameter>, ps |> List.map (fun p ->
-                    Expr.Call (mi,
-                        [ Expr.Value (if rawMode then null else p.Name); Expr.Value p.NpgsqlDbType; Expr.Value (if p.DataType.IsFixedLength then 0 else p.MaxLength); Expr.Value p.Scale; Expr.Value p.Precision ])))
-
-    static member val ParamArrayEmptyExpr =
-        let mi = typeof<Array>.GetMethod(nameof Array.Empty, BindingFlags.Static ||| BindingFlags.Public).MakeGenericMethod typeof<string * obj>
-        Expr.Call (mi, [])
-
     static member val DataColumnArrayEmptyExpr =
         let mi = typeof<Array>.GetMethod(nameof Array.Empty, BindingFlags.Static ||| BindingFlags.Public).MakeGenericMethod typeof<DataColumn>
         Expr.Call (mi, [])
@@ -86,30 +71,66 @@ type internal QuotationsFactory () =
     static member GetMapperFromOptionToObj (t: Type, value: Expr) =
         Expr.Call (typeof<Utils>.GetMethod(nameof Utils.OptionToObj).MakeGenericMethod t, [ Expr.Coerce (value, typeof<obj>) ])
 
-    static member AddGeneratedMethod (sqlParameters: Parameter list, executeArgs: ProvidedParameter list, erasedType, providedOutputType, name, rawMode) =
-        let mappedInputParamValues (exprArgs: Expr list) = 
-            (exprArgs.Tail, sqlParameters)
-            ||> List.map2 (fun expr param ->
-                let value = 
-                    if param.Direction = ParameterDirection.Input then 
-                        if param.Optional then 
-                            QuotationsFactory.GetMapperFromOptionToObj(param.DataType.ClrType, expr)
-                        else
-                            expr
+    static member AddGeneratedMethod (sqlParameters: Parameter list, executeArgs: ProvidedParameter list, providedOutputType, name, rawMode) =
+        let setExtraPropsIfNecessary param paramExpr =
+            let paramExpr =
+                if param.Optional then
+                    Expr.Call (typeof<Utils>.GetMethod(nameof Utils.UnwrapOptionToDb).MakeGenericMethod param.DataType.ClrType, [ Expr.Coerce (paramExpr, typedefof<_ option>.MakeGenericType [| param.DataType.ClrType |]) ])
+                else
+                    Expr.Coerce (paramExpr, typeof<obj>)
+
+            Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlParameter), [ Expr.Value (if rawMode then null else param.Name); Expr.Value param.NpgsqlDbType; Expr.Value (if param.DataType.IsFixedLength then 0 else param.MaxLength); Expr.Value param.Scale; Expr.Value param.Precision; paramExpr ])
+
+        let setExtraPropsIfNecessary' param paramExpr =
+            let paramType = typedefof<NpgsqlParameter<_>>.MakeGenericType [| param.DataType.ClrType |]
+            let newParam = Expr.NewObject (paramType.GetConstructor [| typeof<string>; param.DataType.ClrType |], [ Expr.Value (if rawMode then null else param.Name); paramExpr ])
+
+            if param.Precision <> 0uy || param.Scale <> 0uy then
+                let paramVar = Var ("p", paramType)
+
+                Expr.Let (
+                    paramVar,
+                    newParam,
+                    Expr.Sequential (
+                        Expr.Sequential (
+                            Expr.PropertySet (Expr.Var paramVar, paramType.GetProperty "Precision", Expr.Value param.Precision),
+                            Expr.PropertySet (Expr.Var paramVar, paramType.GetProperty "Scale", Expr.Value param.Scale)
+                        ),
+                        Expr.Var paramVar
+                    )
+                )
+            else
+                newParam
+                
+        let rec addParam paramsExpr (parameters: (Parameter * Expr) list) rawMode continuation =
+            match parameters with
+            | [] -> continuation
+            | (param, paramExpr) :: t ->
+                let newParam =
+                    if param.DataType.ClrType.IsArray || param.Optional || param.DataType.IsUserDefinedType then
+                        setExtraPropsIfNecessary param paramExpr
                     else
-                        let t = param.DataType.ClrType
+                        setExtraPropsIfNecessary' param paramExpr
 
-                        if t.IsArray then
-                            Expr.Value(Array.CreateInstance(t.GetElementType(), param.MaxLength))
-                        else
-                            Expr.Value(Activator.CreateInstance(t), t)
+                let param = Expr.Call (paramsExpr, typeof<NpgsqlParameterCollection>.GetMethod ("Add", [| typeof<NpgsqlParameter> |]), [ newParam ])
+                Expr.Sequential (param, addParam paramsExpr t rawMode continuation)
 
-                Expr.NewTuple [ Expr.Value (if rawMode then null else param.Name); Expr.Coerce (value, typeof<obj>) ])
+        let invokeCode (exprArgs: Expr list) =
+            if exprArgs.Length > 1 then
+                let var = Var ("x", typeof<ISqlCommandImplementation>)
+                let paramsVar = Var ("ps", typeof<NpgsqlParameterCollection>)
 
-        let invokeCode exprArgs =
-            let vals = mappedInputParamValues exprArgs
-            let paramValues = if vals.IsEmpty then QuotationsFactory.ParamArrayEmptyExpr else Expr.NewArray (typeof<string * obj>, vals)
-            Expr.Call (Expr.Coerce (exprArgs.[0], erasedType), typeof<ISqlCommand>.GetMethod name, [ paramValues ])    
+                Expr.Let (
+                    var,
+                    exprArgs.[0],
+                    Expr.Let (
+                        paramsVar,
+                        Expr.PropertyGet (Expr.PropertyGet (Expr.Var var, typeof<ISqlCommandImplementation>.GetProperty "NpgsqlCommand"), typeof<NpgsqlCommand>.GetProperty ("Parameters", typeof<NpgsqlParameterCollection>)),
+                        addParam (Expr.Var paramsVar) (List.zip sqlParameters exprArgs.Tail) rawMode (Expr.Call (Expr.Var var, typeof<ISqlCommand>.GetMethod name, []))
+                    )
+                )
+            else
+                Expr.Call (exprArgs.[0], typeof<ISqlCommand>.GetMethod name, [])
 
         ProvidedMethod(name, executeArgs, providedOutputType, invokeCode)
 
@@ -384,30 +405,25 @@ type internal QuotationsFactory () =
                         if p.DataType.ClrType.IsArray then t.MakeArrayType() else upcast t
                     | _ -> p.DataType.ClrType
 
-                if p.Optional
-                then
-                    assert(p.Direction = ParameterDirection.Input)
-                    yield ProvidedParameter(
+                if p.Optional then
+                    ProvidedParameter(
                         parameterName,
-                        parameterType = ProvidedTypeBuilder.MakeGenericType( typedefof<_ option>, [ t ]),
+                        parameterType = ProvidedTypeBuilder.MakeGenericType(typedefof<_ option>, [ t ]),
                         optionalValue = null
                     )
                 else
-                    if p.Direction.HasFlag(ParameterDirection.Output)
-                    then
-                        yield ProvidedParameter(parameterName, parameterType = t.MakeByRefType(), isOut = true)
-                    else                                 
-                        yield ProvidedParameter(parameterName, parameterType = t)
+                    ProvidedParameter(parameterName, parameterType = t)
         ]
 
     static member val ConnectionUcis = Reflection.FSharpType.GetUnionCases typeof<Choice<string, NpgsqlConnection * NpgsqlTransaction>>
 
-    static member GetCommandFactoryMethod (cmdProvidedType: ProvidedTypeDefinition, designTimeConfig, isExtended, methodName) = 
+    static member GetCommandFactoryMethod (cmdProvidedType: ProvidedTypeDefinition, designTimeConfig, isExtended, methodName, sqlStatement: string) = 
         let ctorImpl = typeof<ISqlCommandImplementation>.GetConstructors() |> Array.exactlyOne
 
         if isExtended then
             let body (Arg3(connection, transaction, commandTimeout)) =
-                let arguments = [ Expr.Value (cmdProvidedType.Name.GetHashCode()); designTimeConfig; Expr.NewUnionCase (QuotationsFactory.ConnectionUcis.[1], [ Expr.NewTuple [ connection; transaction ] ]); commandTimeout ]
+                let cmd = Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlCommand), [ Expr.Value sqlStatement; commandTimeout ])
+                let arguments = [ Expr.Value (cmdProvidedType.Name.GetHashCode()); designTimeConfig; Expr.NewUnionCase (QuotationsFactory.ConnectionUcis.[1], [ Expr.NewTuple [ connection; transaction ] ]); cmd ]
                 Expr.NewObject (ctorImpl, arguments)
 
             let parameters = [
@@ -418,7 +434,8 @@ type internal QuotationsFactory () =
             ProvidedMethod (methodName, parameters, cmdProvidedType, body, true)
         else
             let body (args: _ list) =
-                Expr.NewObject (ctorImpl, [ Expr.Value (cmdProvidedType.Name.GetHashCode()); designTimeConfig; Expr.NewUnionCase (QuotationsFactory.ConnectionUcis.[0], [ args.Head ]) ] @ args.Tail)
+                let cmd = Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlCommand), [ Expr.Value sqlStatement; args.[1] ])
+                Expr.NewObject (ctorImpl, [ Expr.Value (cmdProvidedType.Name.GetHashCode()); designTimeConfig; Expr.NewUnionCase (QuotationsFactory.ConnectionUcis.[0], [ args.Head ]); cmd ])
 
             let parameters = [
                 ProvidedParameter("connectionString", typeof<string>)
@@ -448,7 +465,7 @@ type internal QuotationsFactory () =
         
         let addRedirectToISqlCommandMethods outputType xmlDoc =
             let add outputType name xmlDoc =
-                let m = QuotationsFactory.AddGeneratedMethod (parameters, executeArgs, cmdProvidedType.BaseType, outputType, name, rawMode)
+                let m = QuotationsFactory.AddGeneratedMethod (parameters, executeArgs, outputType, name, rawMode)
                 Option.iter m.AddXmlDoc xmlDoc
                 cmdProvidedType.AddMember m
 

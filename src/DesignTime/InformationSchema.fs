@@ -223,8 +223,7 @@ type DbSchemaLookups =
     
 type Parameter =
     { Name: string
-      NpgsqlDbType: NpgsqlTypes.NpgsqlDbType
-      Direction: ParameterDirection 
+      NpgsqlDbType: NpgsqlDbType
       MaxLength: int
       Precision: byte
       Scale : byte
@@ -309,7 +308,6 @@ let extractParametersAndOutputColumns(connectionString, commandText, resultType,
                 | _ -> p.NpgsqlDbType
             { Name = p.ParameterName
               NpgsqlDbType = npgsqlDbType
-              Direction = p.Direction
               MaxLength = p.Size
               Precision = p.Precision
               Scale = p.Scale
