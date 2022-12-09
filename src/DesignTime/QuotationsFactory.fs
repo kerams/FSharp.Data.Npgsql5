@@ -457,21 +457,13 @@ type internal QuotationsFactory () =
                 | _ ->
                     QuotationsFactory.DataColumnArrayEmptyExpr))
 
-    static member AddTopLevelTypes (cmdProvidedType: ProvidedTypeDefinition) parameters resultType (methodTypes: MethodTypes) customTypes statements typeToAttachTo rawMode =
+    static member AddTopLevelTypes (cmdProvidedType: ProvidedTypeDefinition) parameters resultType customTypes statements typeToAttachTo rawMode =
         let executeArgs = QuotationsFactory.GetExecuteArgs (parameters, customTypes)
         
-        let addRedirectToISqlCommandMethods outputType xmlDoc =
-            let add outputType name xmlDoc =
-                let m = QuotationsFactory.AddGeneratedMethod (parameters, executeArgs, outputType, name, rawMode)
-                Option.iter m.AddXmlDoc xmlDoc
-                cmdProvidedType.AddMember m
-
-            if methodTypes.HasFlag MethodTypes.Sync then
-                add outputType "Execute" xmlDoc
-            if methodTypes.HasFlag MethodTypes.Async then
-                add (typedefof<Async<_>>.MakeGenericType outputType) "AsyncExecute" xmlDoc
-            if methodTypes.HasFlag MethodTypes.Task then
-                add (typedefof<Task<_>>.MakeGenericType outputType) "TaskAsyncExecute" xmlDoc
+        let addRedirectToISqlCommandMethods (outputType: Type) xmlDoc =
+            let m = QuotationsFactory.AddGeneratedMethod (parameters, executeArgs, (typedefof<Task<_>>.MakeGenericType outputType), "TaskAsyncExecute", rawMode)
+            Option.iter m.AddXmlDoc xmlDoc
+            cmdProvidedType.AddMember m
 
         match statements with
         | _ when resultType = ResultType.DataReader ->

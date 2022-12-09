@@ -15,7 +15,7 @@ let typeCache = ConcurrentDictionary<string, ProvidedTypeDefinition> ()
 let schemaCache = ConcurrentDictionary<string, DbSchemaLookups> ()
 
 let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, commands: ProvidedTypeDefinition, customTypes: Map<string, ProvidedTypeDefinition>,
-                           dbSchemaLookups: DbSchemaLookups, globalXCtor, globalPrepare: bool, providedTypeReuse, methodTypes, globalCollectionType: CollectionType) = 
+                           dbSchemaLookups: DbSchemaLookups, globalXCtor, globalPrepare: bool, providedTypeReuse, globalCollectionType: CollectionType) = 
         
     let staticParams = 
         [
@@ -69,7 +69,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                 let cmdProvidedType = ProvidedTypeDefinition (commandTypeName, Some typeof<ISqlCommandImplementation>, hideObjectMethods = true)
                 commands.AddMember cmdProvidedType
 
-                QuotationsFactory.AddTopLevelTypes cmdProvidedType parameters resultType methodTypes customTypes statements
+                QuotationsFactory.AddTopLevelTypes cmdProvidedType parameters resultType customTypes statements
                     (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType) rawMode
 
                 let sqlStatement =
@@ -161,7 +161,7 @@ let createTableTypes(customTypes : Map<string, ProvidedTypeDefinition>, item: Db
 
     tables
 
-let createRootType (assembly, nameSpace: string, typeName, connectionString, xctor, prepare, reuseProvidedTypes, methodTypes, collectionType) =
+let createRootType (assembly, nameSpace: string, typeName, connectionString, xctor, prepare, reuseProvidedTypes, collectionType) =
     if String.IsNullOrWhiteSpace connectionString then invalidArg "Connection" "Value is empty!" 
         
     let databaseRootType = ProvidedTypeDefinition (assembly, nameSpace, typeName, baseType = Some typeof<obj>, hideObjectMethods = true)
@@ -192,7 +192,7 @@ let createRootType (assembly, nameSpace: string, typeName, connectionString, xct
     let commands = ProvidedTypeDefinition("Commands", None)
     databaseRootType.AddMember commands
     let providedTypeReuse = if reuseProvidedTypes then WithCache typeCache else NoReuse
-    addCreateCommandMethod (connectionString, databaseRootType, commands, customTypes, schemaLookups, xctor, prepare, providedTypeReuse, methodTypes, collectionType)
+    addCreateCommandMethod (connectionString, databaseRootType, commands, customTypes, schemaLookups, xctor, prepare, providedTypeReuse, collectionType)
 
     databaseRootType
 
@@ -206,10 +206,9 @@ let internal getProviderType (assembly, nameSpace) =
             ProvidedStaticParameter("XCtor", typeof<bool>, false) 
             ProvidedStaticParameter("Prepare", typeof<bool>, false)
             ProvidedStaticParameter("ReuseProvidedTypes", typeof<bool>, false) 
-            ProvidedStaticParameter("MethodTypes", typeof<MethodTypes>, MethodTypes.Sync ||| MethodTypes.Async)
             ProvidedStaticParameter("CollectionType", typeof<CollectionType>, CollectionType.List)
         ],
-        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4], unbox args.[5])))
+        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4])))
 
     providerType.AddXmlDoc """
 <summary>Typed access to PostgreSQL programmable objects, tables and functions.</summary> 
@@ -217,7 +216,6 @@ let internal getProviderType (assembly, nameSpace) =
 <param name='XCtor'>If set, commands will accept an NpgsqlConnection and an optional NpgsqlTransaction instead of a connection string.</param>
 <param name='Prepare'>If set, commands will be executed as prepared. See Npgsql documentation for prepared statements.</param>
 <param name='ReuseProvidedTypes'>Reuse the return type for commands that select data of identical shape. Please see the readme for details.</param>
-<param name='MethodTypes'>Indicates whether to generate Execute, AsyncExecute or both methods for commands.</param>
 <param name='CollectionType'>Indicates whether rows should be returned in a list, array or ResizeArray.</param>
 """
     providerType

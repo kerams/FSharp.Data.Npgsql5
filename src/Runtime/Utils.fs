@@ -5,10 +5,9 @@ open System.Data
 open System.Data.Common
 open System.Collections.Concurrent
 open System.ComponentModel
+open System.Linq.Expressions
 open Npgsql
 open NpgsqlTypes
-open FSharp.Control.Tasks.NonAffine
-open System.Linq.Expressions
 
 #nowarn "0025"
 
@@ -202,7 +201,7 @@ type Utils () =
         let [| columnName; typeName; nullable |] = stringValues.Split '|'
         new DataColumn (columnName, Utils.GetType typeName, AllowDBNull = (nullable = "1"))
 
-    static member MapRowValuesOntoTuple<'TItem> (cursor: DbDataReader, resultType, resultSet) = Unsafe.uply {
+    static member MapRowValuesOntoTuple<'TItem> (cursor: DbDataReader, resultType, resultSet) = task {
         let results = ResizeArray<'TItem> ()
         let rowReader = getRowToTupleReader resultSet (resultType = ResultType.Records)
         
@@ -230,7 +229,7 @@ type Utils () =
     static member MapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet: ResultSetDefinition) =
         if resultSet.ExpectedColumns.Length > 1 then
             Utils.MapRowValuesOntoTuple<'TItem> (cursor, resultType, resultSet)
-        else Unsafe.uply {
+        else task {
             let columnMapping = getColumnMapping resultSet.ExpectedColumns.[0]
             let results = ResizeArray<'TItem> ()
             

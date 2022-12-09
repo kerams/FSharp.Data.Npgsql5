@@ -16,13 +16,6 @@ type ResultType =
     ///<summary>raw DataReader</summary>
     | DataReader = 3
 
-[<System.Flags>]
-///<summary>Specifies the combination of `Execute`, `AsyncExecute` and `TaskAsyncExecute` methods to provide on commands. Select only those that you need for the best design-time performance.</summary>
-type MethodTypes =
-    | Sync = 1
-    | Async = 2
-    | Task = 4
-
 ///<summary>Specifies the type of collection commands will return.</summary>
 type CollectionType =
     | List = 0
