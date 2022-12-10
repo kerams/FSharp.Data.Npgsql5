@@ -19,6 +19,6 @@ type NpgsqlProviders(config) as this =
         let assemblyName = assembly.GetName().Name
         let nameSpace = this.GetType().Namespace
         
-        assert (typeof<ISqlCommandImplementation>.Assembly.GetName().Name = assemblyName) 
+        assert (typeof<ProvidedCommand>.Assembly.GetName().Name = assemblyName) 
 
         this.AddNamespace (nameSpace, [ NpgsqlConnectionProvider.getProviderType (assembly, nameSpace) ])

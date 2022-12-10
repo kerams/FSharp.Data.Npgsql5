@@ -66,7 +66,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                         typename
                     else methodName.Replace("=", "").Replace("@", "").Replace("CreateCommand,CommandText", "")
 
-                let cmdProvidedType = ProvidedTypeDefinition (commandTypeName, Some typeof<ISqlCommandImplementation>, hideObjectMethods = true)
+                let cmdProvidedType = ProvidedTypeDefinition (commandTypeName, Some typeof<ProvidedCommand>, hideObjectMethods = true)
                 commands.AddMember cmdProvidedType
 
                 QuotationsFactory.AddTopLevelTypes cmdProvidedType parameters resultType customTypes statements
@@ -79,13 +79,11 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                         sqlStatement.Trim ()
 
                 let designTimeConfig = 
-                    Expr.Lambda (Var ("x", typeof<unit>),
+                    Expr.Lambda (
+                        Var ("x", typeof<unit>),
                         Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
-                            Expr.Value resultType
-                            Expr.Value collectionType
-                            Expr.Value singleRow
+                            Expr.Value $"""{int resultType}|{int collectionType}|{if singleRow then "1" else "0"}|{if prepare then "1" else "0"}"""
                             QuotationsFactory.BuildDataColumnsExpr (statements, resultType <> ResultType.DataTable)
-                            Expr.Value prepare
                         ]))
 
                 let method = QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, designTimeConfig, xctor, methodName, sqlStatement)

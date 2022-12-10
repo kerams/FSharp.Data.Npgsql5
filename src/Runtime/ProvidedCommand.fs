@@ -9,6 +9,9 @@ open System.Collections.Concurrent
 open System.Threading.Tasks
 open type Utils
 
+[<assembly: CompilerServices.TypeProviderAssembly("FSharp.Data.Npgsql.DesignTime")>]
+do ()
+
 [<EditorBrowsable(EditorBrowsableState.Never); NoEquality; NoComparison>]
 type DesignTimeConfig = {
     ResultType: ResultType
@@ -18,25 +21,29 @@ type DesignTimeConfig = {
     Prepare: bool
 }
     with
-        static member Create (resultType, collection, singleRow, (columns: DataColumn[][]), prepare) = {
-            ResultType = resultType
-            CollectionType = collection
-            SingleRow = singleRow
-            ResultSets = columns |> Array.map (fun r -> CreateResultSetDefinition (r, resultType))
-            Prepare = prepare }
+        static member Create (stringValues: string, columns: DataColumn[][]) =
+            let split = stringValues.Split '|'
+            let resultType = int split.[0] |> enum<ResultType>
+            {
+                ResultType = resultType
+                CollectionType = int split.[1] |> enum
+                SingleRow = split.[2] = "1"
+                ResultSets = columns |> Array.map (fun r -> CreateResultSetDefinition (r, resultType))
+                Prepare = split.[3] = "1"
+            }
 
-[<EditorBrowsable(EditorBrowsableState.Never)>]
-type ISqlCommandImplementation (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig, _cmd: NpgsqlCommand) =
-    static let cfgExecuteCache = ConcurrentDictionary ()
+[<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
+type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig, _cmd: NpgsqlCommand) =
+    static let cfgCache = ConcurrentDictionary ()
     static let executeSingleCache = ConcurrentDictionary ()
 
     let cfg =
         let mutable x = Unchecked.defaultof<_>
-        if cfgExecuteCache.TryGetValue (commandNameHash, &x) then
+        if cfgCache.TryGetValue (commandNameHash, &x) then
             x
         else
             let cfg = cfgBuilder ()
-            cfgExecuteCache.[commandNameHash] <- cfg
+            cfgCache.[commandNameHash] <- cfg
             cfg
 
     static let getReaderBehavior (closeConnection, cfg) = 
@@ -106,17 +113,17 @@ type ISqlCommandImplementation (commandNameHash: int, cfgBuilder: unit -> Design
                     if Array.isEmpty resultSet.ExpectedColumns then
                         null
                     else
-                        ISqlCommandImplementation.VerifyOutputColumns(cursor, resultSet.ExpectedColumns)
-                        ISqlCommandImplementation.LoadDataTable cursor (x.NpgsqlCommand.Clone()) resultSet.ExpectedColumns |> box)
+                        ProvidedCommand.VerifyOutputColumns(cursor, resultSet.ExpectedColumns)
+                        ProvidedCommand.LoadDataTable cursor (x.NpgsqlCommand.Clone()) resultSet.ExpectedColumns |> box)
 
-            ISqlCommandImplementation.SetNumberOfAffectedRows (results, x.NpgsqlCommand.Statements)
+            ProvidedCommand.SetNumberOfAffectedRows (results, x.NpgsqlCommand.Statements)
             return results
         }
 
     member x.GetDataTable () =
         task {
             use! reader = x.GetDataReader () 
-            return ISqlCommandImplementation.LoadDataTable reader (x.NpgsqlCommand.Clone()) cfg.ResultSets.[0].ExpectedColumns
+            return ProvidedCommand.LoadDataTable reader (x.NpgsqlCommand.Clone()) cfg.ResultSets.[0].ExpectedColumns
         }
 
     static member internal ExecuteSingle<'TItem> () = Func<_, _, _, _>(fun reader resultSetDefinition cfg -> task {
@@ -180,10 +187,10 @@ type ISqlCommandImplementation (commandNameHash: int, cfgBuilder: unit -> Design
             else
                 // Verifying the output columns are as expected only during the first call
                 // In a clustered DB environment, instances can theoretically differ in this regard, but it's too much of an edge case to have this check on every call
-                ISqlCommandImplementation.VerifyOutputColumns(cursor, resultSetDefinition.ExpectedColumns)
+                ProvidedCommand.VerifyOutputColumns(cursor, resultSetDefinition.ExpectedColumns)
                 let func = 
-                    typeof<ISqlCommandImplementation>
-                        .GetMethod(nameof ISqlCommandImplementation.ExecuteSingle, BindingFlags.NonPublic ||| BindingFlags.Static)
+                    typeof<ProvidedCommand>
+                        .GetMethod(nameof ProvidedCommand.ExecuteSingle, BindingFlags.NonPublic ||| BindingFlags.Static)
                         .MakeGenericMethod(resultSetDefinition.ErasedRowType)
                         .Invoke(null, [||]) :?> Func<_, _, _, Task<obj>>
 
@@ -203,12 +210,12 @@ type ISqlCommandImplementation (commandNameHash: int, cfgBuilder: unit -> Design
 
                 while go do
                     let currentStatement = GetStatementIndex.Invoke cursor
-                    let! res = ISqlCommandImplementation.ReadResultSet (cursor, cfg.ResultSets.[currentStatement], cfg)
+                    let! res = ProvidedCommand.ReadResultSet (cursor, cfg.ResultSets.[currentStatement], cfg)
                     results.[currentStatement] <- res
                     let! more = cursor.NextResultAsync ()
                     go <- more
 
-            ISqlCommandImplementation.SetNumberOfAffectedRows (results, x.NpgsqlCommand.Statements)
+            ProvidedCommand.SetNumberOfAffectedRows (results, x.NpgsqlCommand.Statements)
             return results
         }
 

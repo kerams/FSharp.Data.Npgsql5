@@ -28,6 +28,7 @@ type ResultSetDefinition = {
     ErasedRowType: System.Type
     ExpectedColumns: DataColumn[] }
 
+[<Sealed>]
 type LazySeq<'a> (s: 'a seq, reader: Common.DbDataReader, cmd: NpgsqlCommand) =
     member val Seq = s
 
@@ -36,8 +37,7 @@ type LazySeq<'a> (s: 'a seq, reader: Common.DbDataReader, cmd: NpgsqlCommand) =
             reader.Dispose ()
             cmd.Dispose ()
 
-[<Sealed>]
-[<EditorBrowsable(EditorBrowsableState.Never)>]
+[<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
 type DataTable<'T when 'T :> DataRow>(selectCommand: NpgsqlCommand) = 
     inherit DataTable() 
 

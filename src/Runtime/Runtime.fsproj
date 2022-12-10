@@ -19,8 +19,7 @@
     <Compile Include="BatchDataAdapter.fs" />
     <Compile Include="CommandBuilder.fs" />
     <Compile Include="Utils.fs" />
-    <Compile Include="ISqlCommand.fs" />
-    <Compile Include="DesignTime.fs" />
+    <Compile Include="ProvidedCommand.fs" />
     <Content Include="paket.template" />
     <Content Include="paket.references" />
   </ItemGroup>

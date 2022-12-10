@@ -20,8 +20,8 @@
     <Compile Include="..\Runtime\Utils.fs">
       <Link>Utils.fs</Link>
     </Compile>
-    <Compile Include="..\Runtime\ISqlCommand.fs">
-      <Link>ISqlCommand.fs</Link>
+    <Compile Include="..\Runtime\ProvidedCommand.fs">
+      <Link>ProvidedCommand.fs</Link>
     </Compile>
     <Compile Include="..\..\paket-files\tpsdk\demetrixbio\FSharp.TypeProviders.SDK\src\ProvidedTypes.fsi" Link="ProvidedTypes.fsi" />
     <Compile Include="..\..\paket-files\tpsdk\demetrixbio\FSharp.TypeProviders.SDK\src\ProvidedTypes.fs" Link="ProvidedTypes.fs" />

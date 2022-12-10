@@ -118,11 +118,11 @@ type internal QuotationsFactory () =
         let invokeCode (exprArgs: Expr list) =
             let method =
                 match genericParameter with
-                | None -> typeof<ISqlCommandImplementation>.GetMethod name
-                | Some (t: Type) -> typeof<ISqlCommandImplementation>.GetMethod(name).MakeGenericMethod t
+                | None -> typeof<ProvidedCommand>.GetMethod name
+                | Some (t: Type) -> typeof<ProvidedCommand>.GetMethod(name).MakeGenericMethod t
 
             if exprArgs.Length > 1 then
-                let var = Var ("x", typeof<ISqlCommandImplementation>)
+                let var = Var ("x", typeof<ProvidedCommand>)
                 let paramsVar = Var ("ps", typeof<NpgsqlParameterCollection>)
 
                 Expr.Let (
@@ -130,7 +130,7 @@ type internal QuotationsFactory () =
                     exprArgs.[0],
                     Expr.Let (
                         paramsVar,
-                        Expr.PropertyGet (Expr.PropertyGet (Expr.Var var, typeof<ISqlCommandImplementation>.GetProperty "NpgsqlCommand"), typeof<NpgsqlCommand>.GetProperty ("Parameters", typeof<NpgsqlParameterCollection>)),
+                        Expr.PropertyGet (Expr.PropertyGet (Expr.Var var, typeof<ProvidedCommand>.GetProperty "NpgsqlCommand"), typeof<NpgsqlCommand>.GetProperty ("Parameters", typeof<NpgsqlParameterCollection>)),
                         addParam (Expr.Var paramsVar) (List.zip sqlParameters exprArgs.Tail) rawMode (Expr.Call (Expr.Var var, method, []))
                     )
                 )
@@ -421,7 +421,7 @@ type internal QuotationsFactory () =
         ]
 
     static member GetCommandFactoryMethod (cmdProvidedType: ProvidedTypeDefinition, designTimeConfig, isExtended, methodName, sqlStatement: string) = 
-        let ctorImpl = typeof<ISqlCommandImplementation>.GetConstructors() |> Array.exactlyOne
+        let ctorImpl = typeof<ProvidedCommand>.GetConstructors() |> Array.exactlyOne
 
         if isExtended then
             let body (Arg3 (conn, tran, commandTimeout)) =

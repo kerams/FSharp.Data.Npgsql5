@@ -11,7 +11,7 @@ open NpgsqlTypes
 
 #nowarn "0025"
 
-[<EditorBrowsable(EditorBrowsableState.Never)>]
+[<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
 type Utils () =
     static let getColumnMapping =
         let cache = ConcurrentDictionary<Type, obj -> obj> ()
