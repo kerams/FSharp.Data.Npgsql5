@@ -49,11 +49,11 @@ type Utils () =
                             constituentTuple genericArg columns param (startIndex + 7)
                         else
                             let i, c = columns.[paramIndex + startIndex]
-                            let v = Expression.Call (param, typeof<DbDataReader>.GetMethod("GetFieldValue").MakeGenericMethod c.DataType, Expression.Constant i)
+                            let v = Expression.Call (param, typeof<DbDataReader>.GetMethod(nameof Unchecked.defaultof<DbDataReader>.GetFieldValue).MakeGenericMethod c.DataType, Expression.Constant i)
 
                             if c.AllowDBNull then
                                 Expression.Condition (
-                                    Expression.Call (param, typeof<DbDataReader>.GetMethod "IsDBNull", Expression.Constant i),
+                                    Expression.Call (param, typeof<DbDataReader>.GetMethod (nameof Unchecked.defaultof<DbDataReader>.IsDBNull), Expression.Constant i),
                                     Expression.Constant (null, typedefof<_ option>.MakeGenericType c.DataType),
                                     Expression.New (typedefof<_ option>.MakeGenericType(c.DataType).GetConstructor [| c.DataType |], v))
                             else

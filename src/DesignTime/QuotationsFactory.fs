@@ -93,8 +93,8 @@ type internal QuotationsFactory () =
                     newParam,
                     Expr.Sequential (
                         Expr.Sequential (
-                            Expr.PropertySet (Expr.Var paramVar, paramType.GetProperty "Precision", Expr.Value param.Precision),
-                            Expr.PropertySet (Expr.Var paramVar, paramType.GetProperty "Scale", Expr.Value param.Scale)
+                            Expr.PropertySet (Expr.Var paramVar, paramType.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Precision), Expr.Value param.Precision),
+                            Expr.PropertySet (Expr.Var paramVar, paramType.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Scale), Expr.Value param.Scale)
                         ),
                         Expr.Var paramVar
                     )
@@ -130,7 +130,7 @@ type internal QuotationsFactory () =
                     exprArgs.[0],
                     Expr.Let (
                         paramsVar,
-                        Expr.PropertyGet (Expr.PropertyGet (Expr.Var var, typeof<ProvidedCommand>.GetProperty "NpgsqlCommand"), typeof<NpgsqlCommand>.GetProperty ("Parameters", typeof<NpgsqlParameterCollection>)),
+                        Expr.PropertyGet (Expr.PropertyGet (Expr.Var var, typeof<ProvidedCommand>.GetProperty (nameof Unchecked.defaultof<ProvidedCommand>.NpgsqlCommand)), typeof<NpgsqlCommand>.GetProperty ((nameof Unchecked.defaultof<NpgsqlCommand>.Parameters), typeof<NpgsqlParameterCollection>)),
                         addParam (Expr.Var paramsVar) (List.zip sqlParameters exprArgs.Tail) rawMode (Expr.Call (Expr.Var var, method, []))
                     )
                 )
@@ -465,13 +465,13 @@ type internal QuotationsFactory () =
     static member AddTopLevelTypes (cmdProvidedType: ProvidedTypeDefinition) parameters resultType customTypes statements typeToAttachTo rawMode =
         let executeArgs = QuotationsFactory.GetExecuteArgs (parameters, customTypes)
         
-        let addRedirectToISqlCommandMethods (outputType: Type) resultType xmlDoc =
+        let addMethodRedirects (outputType: Type) resultType xmlDoc =
             let methodName, generic =
                 match resultType, statements with
-                | ResultType.DataReader, _ -> "GetDataReader", None
-                | ResultType.DataTable, [ _ ] -> "GetDataTable", None
-                | ResultType.DataTable, _ -> "GetDataTables", None
-                | _, [ { Type = NonQuery } ] -> "ExecuteNonQuery", None
+                | ResultType.DataReader, _ -> nameof Unchecked.defaultof<ProvidedCommand>.GetDataReader, None
+                | ResultType.DataTable, [ _ ] -> nameof Unchecked.defaultof<ProvidedCommand>.GetDataTable, None
+                | ResultType.DataTable, _ -> nameof Unchecked.defaultof<ProvidedCommand>.GetDataTables, None
+                | _, [ { Type = NonQuery } ] -> nameof Unchecked.defaultof<ProvidedCommand>.ExecuteNonQuery, None
                 | _, [ { Type = Query columns } ] ->
                     let t =
                         match columns with
@@ -489,8 +489,8 @@ type internal QuotationsFactory () =
                             
                             Reflection.FSharpType.MakeTupleType (columns |> List.map (fun c -> if c.Nullable then typedefof<_ option>.MakeGenericType c.ClrType else c.ClrType) |> List.toArray)
                     
-                    "ExecuteSingleStatement", Some t
-                | _ -> "ExecuteMultiStatement", None
+                    nameof Unchecked.defaultof<ProvidedCommand>.ExecuteSingleStatement, Some t
+                | _ -> nameof Unchecked.defaultof<ProvidedCommand>.ExecuteMultiStatement, None
 
             let m = QuotationsFactory.AddGeneratedMethod (parameters, executeArgs, generic, (typedefof<Task<_>>.MakeGenericType outputType), methodName, rawMode)
             Option.iter m.AddXmlDoc xmlDoc
@@ -498,10 +498,10 @@ type internal QuotationsFactory () =
 
         match statements with
         | _ when resultType = ResultType.DataReader ->
-            addRedirectToISqlCommandMethods typeof<NpgsqlDataReader> resultType None
+            addMethodRedirects typeof<NpgsqlDataReader> resultType None
         | [ { ReturnType = Some returnType; Sql = sql } ] ->
             let xmlDoc = if returnType.Single = typeof<int> then sprintf "Number of rows affected by \"%s\"." sql |> Some else None
-            addRedirectToISqlCommandMethods returnType.Single resultType xmlDoc
+            addMethodRedirects returnType.Single resultType xmlDoc
             QuotationsFactory.AddProvidedTypeToDeclaring resultType returnType typeToAttachTo
         | _ ->
             let resultSetsType = ProvidedTypeDefinition ("ResultSets", baseType = Some typeof<obj[]>, hideObjectMethods = true)
@@ -521,7 +521,7 @@ type internal QuotationsFactory () =
 
                 statement.ReturnType |> Option.iter (fun rt -> QuotationsFactory.AddProvidedTypeToDeclaring resultType rt typeToAttachTo))
 
-            addRedirectToISqlCommandMethods resultSetsType resultType None
+            addMethodRedirects resultSetsType resultType None
             cmdProvidedType.AddMember resultSetsType
 
 
