@@ -71,7 +71,7 @@ type internal QuotationsFactory () =
     static member GetMapperFromOptionToObj (t: Type, value: Expr) =
         Expr.Call (typeof<Utils>.GetMethod(nameof Utils.OptionToObj).MakeGenericMethod t, [ Expr.Coerce (value, typeof<obj>) ])
 
-    static member AddGeneratedMethod (sqlParameters: Parameter list, executeArgs: ProvidedParameter list, genericParameter, providedOutputType, name, rawMode) =
+    static member AddGeneratedMethod (providedCommandType: Type, sqlParameters: Parameter list, executeArgs: ProvidedParameter list, genericParameter, providedOutputType, name, rawMode) =
         let setExtraPropsIfNecessary param paramExpr =
             let paramExpr =
                 if param.Optional then
@@ -118,11 +118,11 @@ type internal QuotationsFactory () =
         let invokeCode (exprArgs: Expr list) =
             let method =
                 match genericParameter with
-                | None -> typeof<ProvidedCommand>.GetMethod name
-                | Some (t: Type) -> typeof<ProvidedCommand>.GetMethod(name).MakeGenericMethod t
+                | None -> providedCommandType.GetMethod name
+                | Some (t: Type) -> providedCommandType.GetMethod(name).MakeGenericMethod t
 
             if exprArgs.Length > 1 then
-                let var = Var ("x", typeof<ProvidedCommand>)
+                let var = Var ("x", providedCommandType)
                 let paramsVar = Var ("ps", typeof<NpgsqlParameterCollection>)
 
                 Expr.Let (
@@ -130,7 +130,7 @@ type internal QuotationsFactory () =
                     exprArgs.[0],
                     Expr.Let (
                         paramsVar,
-                        Expr.PropertyGet (Expr.PropertyGet (Expr.Var var, typeof<ProvidedCommand>.GetProperty (nameof Unchecked.defaultof<ProvidedCommand>.NpgsqlCommand)), typeof<NpgsqlCommand>.GetProperty ((nameof Unchecked.defaultof<NpgsqlCommand>.Parameters), typeof<NpgsqlParameterCollection>)),
+                        Expr.PropertyGet (Expr.PropertyGet (Expr.Var var, providedCommandType.GetProperty "NpgsqlCommand"), typeof<NpgsqlCommand>.GetProperty ((nameof Unchecked.defaultof<NpgsqlCommand>.Parameters), typeof<NpgsqlParameterCollection>)),
                         addParam (Expr.Var paramsVar) (List.zip sqlParameters exprArgs.Tail) rawMode (Expr.Call (Expr.Var var, method, []))
                     )
                 )
@@ -420,6 +420,31 @@ type internal QuotationsFactory () =
                     ProvidedParameter(parameterName, parameterType = t)
         ]
 
+    static member GetCreateCommandMethodNonQuery (cmdProvidedType: ProvidedTypeDefinition, prepare: bool, isExtended, methodName, sqlStatement: string) =
+        let ctorImpl = typeof<ProvidedCommandNonQuery>.GetConstructors() |> Array.exactlyOne
+
+        if isExtended then
+            let body (Arg3 (conn, tran, commandTimeout)) =
+                let cmd = Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlCommandXCtor), [ conn; tran; Expr.Value sqlStatement; commandTimeout ])
+                Expr.NewObject (ctorImpl, [ Expr.Value prepare; cmd ])
+
+            let parameters = [
+                ProvidedParameter("connection", typeof<NpgsqlConnection>) 
+                ProvidedParameter("transaction", typeof<NpgsqlTransaction>, optionalValue = null)
+                ProvidedParameter("commandTimeout", typeof<int>, optionalValue = defaultCommandTimeout) ]
+
+            ProvidedMethod (methodName, parameters, cmdProvidedType, body, true)
+        else
+            let body (args: Expr list) =
+                let cmd = Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlCommand), [ args.[0]; Expr.Value sqlStatement; args.[1] ])
+                Expr.NewObject (ctorImpl, [ Expr.Value prepare; cmd ])
+
+            let parameters = [
+                ProvidedParameter("connectionString", typeof<string>)
+                ProvidedParameter("commandTimeout", typeof<int>, optionalValue = defaultCommandTimeout) ]
+
+            ProvidedMethod (methodName, parameters, cmdProvidedType, body, true)
+
     static member GetCommandFactoryMethod (cmdProvidedType: ProvidedTypeDefinition, designTimeConfig, isExtended, methodName, sqlStatement: string) = 
         let ctorImpl = typeof<ProvidedCommand>.GetConstructors() |> Array.exactlyOne
 
@@ -471,7 +496,7 @@ type internal QuotationsFactory () =
                 | ResultType.DataReader, _ -> nameof Unchecked.defaultof<ProvidedCommand>.GetDataReader, None
                 | ResultType.DataTable, [ _ ] -> nameof Unchecked.defaultof<ProvidedCommand>.GetDataTable, None
                 | ResultType.DataTable, _ -> nameof Unchecked.defaultof<ProvidedCommand>.GetDataTables, None
-                | _, [ { Type = NonQuery } ] -> nameof Unchecked.defaultof<ProvidedCommand>.ExecuteNonQuery, None
+                | _, [ { Type = NonQuery } ] -> failwith "nope"
                 | _, [ { Type = Query columns } ] ->
                     let t =
                         match columns with
@@ -492,7 +517,7 @@ type internal QuotationsFactory () =
                     nameof Unchecked.defaultof<ProvidedCommand>.ExecuteSingleStatement, Some t
                 | _ -> nameof Unchecked.defaultof<ProvidedCommand>.ExecuteMultiStatement, None
 
-            let m = QuotationsFactory.AddGeneratedMethod (parameters, executeArgs, generic, (typedefof<Task<_>>.MakeGenericType outputType), methodName, rawMode)
+            let m = QuotationsFactory.AddGeneratedMethod (typeof<ProvidedCommand>, parameters, executeArgs, generic, (typedefof<Task<_>>.MakeGenericType outputType), methodName, rawMode)
             Option.iter m.AddXmlDoc xmlDoc
             cmdProvidedType.AddMember m
 

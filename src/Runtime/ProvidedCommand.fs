@@ -12,11 +12,18 @@ open type Utils
 [<assembly: CompilerServices.TypeProviderAssembly("FSharp.Data.Npgsql.DesignTime")>]
 do ()
 
+[<EditorBrowsable(EditorBrowsableState.Never)>]
+type CollectionTypeInt =
+    | List = 0
+    | Array = 1
+    | ResizeArray = 2
+    | LazySeq = 3
+    | Option = 4
+
 [<EditorBrowsable(EditorBrowsableState.Never); NoEquality; NoComparison>]
 type DesignTimeConfig = {
     ResultType: ResultType
-    CollectionType: CollectionType
-    SingleRow: bool
+    CollectionType: CollectionTypeInt
     ResultSets: ResultSetDefinition[]
     Prepare: bool
 }
@@ -27,9 +34,8 @@ type DesignTimeConfig = {
             {
                 ResultType = resultType
                 CollectionType = int split.[1] |> enum
-                SingleRow = split.[2] = "1"
                 ResultSets = columns |> Array.map (fun r -> CreateResultSetDefinition (r, resultType))
-                Prepare = split.[3] = "1"
+                Prepare = split.[2] = "1"
             }
 
 [<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
@@ -48,7 +54,7 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
 
     static let getReaderBehavior (closeConnection, cfg) = 
         // Don't pass CommandBehavior.SingleRow to Npgsql, because it only applies to the first row of the first result set and all other result sets are completely ignored
-        if cfg.SingleRow && cfg.ResultSets.Length = 1 then CommandBehavior.SingleRow else CommandBehavior.Default
+        if cfg.CollectionType = CollectionTypeInt.Option && cfg.ResultSets.Length = 1 then CommandBehavior.SingleRow else CommandBehavior.Default
         ||| if cfg.ResultType = ResultType.DataTable then CommandBehavior.KeyInfo else CommandBehavior.Default
         ||| if closeConnection then CommandBehavior.CloseConnection else CommandBehavior.Default
 
@@ -56,7 +62,7 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
 
     interface IDisposable with
         member x.Dispose () =
-            if cfg.CollectionType <> CollectionType.LazySeq then
+            if cfg.CollectionType <> CollectionTypeInt.LazySeq then
                 x.NpgsqlCommand.Dispose ()
 
     static member internal VerifyOutputColumns(cursor: Common.DbDataReader, expectedColumns: DataColumn[]) =
@@ -130,17 +136,18 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
         let! xs = MapRowValues<'TItem> (reader, cfg.ResultType, resultSetDefinition)
 
         return
-            if cfg.SingleRow then
+            match cfg.CollectionType with
+            | CollectionTypeInt.Option ->
                 ResizeArrayToOption xs |> box
-            elif cfg.CollectionType = CollectionType.Array then
+            | CollectionTypeInt.Array ->
                 xs.ToArray () |> box
-            elif cfg.CollectionType = CollectionType.List then
+            | CollectionTypeInt.List ->
                 ResizeArrayToList xs |> box
-            else
+            | _ ->
                 box xs })
             
     member x.ExecuteSingleStatement<'TItem> () =
-        if cfg.CollectionType = CollectionType.LazySeq && not cfg.SingleRow then
+        if cfg.CollectionType = CollectionTypeInt.LazySeq then
             task {
                 let! reader = x.GetDataReader ()
                 
@@ -158,25 +165,26 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
                 use! reader = x.GetDataReader ()
                 return! MapRowValues<'TItem> (reader, cfg.ResultType, cfg.ResultSets.[0]) }
 
-            if cfg.SingleRow then
+            match cfg.CollectionType with
+            | CollectionTypeInt.Option ->
                 task {
                     let! xs = xs
                     return ResizeArrayToOption xs
                 }
                 |> box
-            elif cfg.CollectionType = CollectionType.Array then
+            | CollectionTypeInt.Array ->
                 task {
                     let! xs = xs
                     return xs.ToArray ()
                 }
                 |> box
-            elif cfg.CollectionType = CollectionType.List then
+            | CollectionTypeInt.List ->
                 task {
                     let! xs = xs
                     return ResizeArrayToList xs
                 }
                 |> box
-            else
+            | _ ->
                 box xs
 
     static member private ReadResultSet (cursor: Common.DbDataReader, resultSetDefinition, cfg) =
@@ -219,6 +227,18 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
             return results
         }
 
+    static member internal SetNumberOfAffectedRows (results: obj[], statements: System.Collections.Generic.IReadOnlyList<NpgsqlBatchCommand>) =
+        for i in 0 .. statements.Count - 1 do
+            if isNull results.[i] then
+                results.[i] <- int statements.[i].Rows |> box
+
+[<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
+type ProvidedCommandNonQuery (prepare: bool, _cmd: NpgsqlCommand) =
+    member val NpgsqlCommand = _cmd
+
+    interface IDisposable with
+        member x.Dispose () = x.NpgsqlCommand.Dispose ()
+
     member x.ExecuteNonQuery () = 
         task {
             let openHere = x.NpgsqlCommand.Connection.State = ConnectionState.Closed
@@ -228,13 +248,17 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
 
             use _ = if openHere then x.NpgsqlCommand.Connection else null
 
-            if cfg.Prepare then
+            if prepare then
                 do! x.NpgsqlCommand.PrepareAsync ()
 
             return! x.NpgsqlCommand.ExecuteNonQueryAsync ()
         }
 
-    static member internal SetNumberOfAffectedRows (results: obj[], statements: System.Collections.Generic.IReadOnlyList<NpgsqlBatchCommand>) =
-        for i in 0 .. statements.Count - 1 do
-            if isNull results.[i] then
-                results.[i] <- int statements.[i].Rows |> box
+[<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
+type ProvidedCommandSingleStatement (dispose: bool, prepare: bool, _cmd: NpgsqlCommand) =
+    member val NpgsqlCommand = _cmd
+
+    interface IDisposable with
+        member x.Dispose () =
+            if dispose then
+                x.NpgsqlCommand.Dispose ()

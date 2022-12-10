@@ -9,6 +9,7 @@ open FSharp.Data.Npgsql
 open InformationSchema
 open System.Collections.Concurrent
 open System.Reflection
+open System.Threading.Tasks
 
 let methodsCache = ConcurrentDictionary<string, ProvidedMethod> ()
 let typeCache = ConcurrentDictionary<string, ProvidedTypeDefinition> ()
@@ -66,27 +67,52 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                         typename
                     else methodName.Replace("=", "").Replace("@", "").Replace("CreateCommand,CommandText", "")
 
-                let cmdProvidedType = ProvidedTypeDefinition (commandTypeName, Some typeof<ProvidedCommand>, hideObjectMethods = true)
-                commands.AddMember cmdProvidedType
-
-                QuotationsFactory.AddTopLevelTypes cmdProvidedType parameters resultType customTypes statements
-                    (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType) rawMode
-
+                
                 let sqlStatement =
                     if rawMode then
                         (parameters |> List.indexed |> List.fold (fun (currS: string) (i, param) -> currS.Replace("@" + param.Name, "$" + (i + 1).ToString())) sqlStatement).Trim ()
                     else
                         sqlStatement.Trim ()
 
-                let designTimeConfig = 
-                    Expr.Lambda (
-                        Var ("x", typeof<unit>),
-                        Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
-                            Expr.Value $"""{int resultType}|{int collectionType}|{if singleRow then "1" else "0"}|{if prepare then "1" else "0"}"""
-                            QuotationsFactory.BuildDataColumnsExpr (statements, resultType <> ResultType.DataTable)
-                        ]))
+                let method =
+                    match statements with
+                    | [ { Type = NonQuery } ] ->
+                        let cmdProvidedType = ProvidedTypeDefinition (commandTypeName, Some typeof<ProvidedCommandNonQuery>, hideObjectMethods = true)
+                        commands.AddMember cmdProvidedType
+                        let executeArgs = QuotationsFactory.GetExecuteArgs (parameters, customTypes)
+                        let m = QuotationsFactory.AddGeneratedMethod (typeof<ProvidedCommandNonQuery>, parameters, executeArgs, None, typeof<Task<int>>, nameof Unchecked.defaultof<ProvidedCommandNonQuery>.ExecuteNonQuery, rawMode)
+                        m.AddXmlDoc "Returns the number of rows affected."
+                        cmdProvidedType.AddMember m
 
-                let method = QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, designTimeConfig, xctor, methodName, sqlStatement)
+                        QuotationsFactory.GetCreateCommandMethodNonQuery (cmdProvidedType, prepare, xctor, methodName, sqlStatement)
+                    | _ ->
+                        let cmdProvidedType = ProvidedTypeDefinition (commandTypeName, Some typeof<ProvidedCommand>, hideObjectMethods = true)
+                        commands.AddMember cmdProvidedType
+
+                        QuotationsFactory.AddTopLevelTypes cmdProvidedType parameters resultType customTypes statements
+                            (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType) rawMode
+
+                        let collectionType =
+                            if singleRow then
+                                CollectionTypeInt.Option
+                            else
+                                match collectionType with
+                                | CollectionType.Array -> CollectionTypeInt.Array
+                                | CollectionType.ResizeArray -> CollectionTypeInt.ResizeArray
+                                | CollectionType.List -> CollectionTypeInt.List
+                                | CollectionType.LazySeq -> CollectionTypeInt.LazySeq
+                                | _ -> failwithf "Unmapped collection type %A" collectionType
+
+                        let designTimeConfig = 
+                            Expr.Lambda (
+                                Var ("x", typeof<unit>),
+                                Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
+                                    Expr.Value $"""{int resultType}|{int collectionType}|{if prepare then "1" else "0"}"""
+                                    QuotationsFactory.BuildDataColumnsExpr (statements, resultType <> ResultType.DataTable)
+                                ]))
+
+                        QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, designTimeConfig, xctor, methodName, sqlStatement)
+
                 rootType.AddMember method
                 method)
     ))

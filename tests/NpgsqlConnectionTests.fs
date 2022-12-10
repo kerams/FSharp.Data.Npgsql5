@@ -918,7 +918,7 @@ let ``Interval update works``() =
     Assert.Equal(expectedTS, row.Value.modified)
 
     use cleanupCommand = DvdRental.CreateCommand<"DELETE FROM public.logs WHERE id = @id">(connectionString)
-    cleanupCommand.TaskAsyncExecute(entryId) |> ignore
+    cleanupCommand.TaskAsyncExecute(entryId).Wait ()
 
 [<Fact>]
 let ``Insert does skip computed columns``() =
