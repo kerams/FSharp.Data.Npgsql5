@@ -67,7 +67,6 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                         typename
                     else methodName.Replace("=", "").Replace("@", "").Replace("CreateCommand,CommandText", "")
 
-                
                 let sqlStatement =
                     if rawMode then
                         (parameters |> List.indexed |> List.fold (fun (currS: string) (i, param) -> currS.Replace("@" + param.Name, "$" + (i + 1).ToString())) sqlStatement).Trim ()
@@ -85,33 +84,38 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                         cmdProvidedType.AddMember m
 
                         QuotationsFactory.GetCreateCommandMethodNonQuery (cmdProvidedType, prepare, xctor, methodName, sqlStatement)
+                    | [ { Type = Query columns } ] when resultType <> ResultType.DataReader && resultType <> ResultType.DataTable ->
+                        let cmdProvidedType = ProvidedTypeDefinition (commandTypeName, Some typeof<ProvidedCommandSingleStatement>, hideObjectMethods = true)
+                        commands.AddMember cmdProvidedType
+
+                        QuotationsFactory.AddTopLevelTypes cmdProvidedType typeof<ProvidedCommandSingleStatement> parameters singleRow resultType collectionType customTypes statements
+                            (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType) rawMode
+
+                        let designTimeConfig = 
+                            Expr.Lambda (
+                                Var ("x", typeof<unit>),
+                                Expr.Call (typeof<DesignTimeConfigSingleStatement>.GetMethod (nameof DesignTimeConfigSingleStatement.Create, BindingFlags.Static ||| BindingFlags.Public), [
+                                    Expr.Value $"""{if collectionType = CollectionType.LazySeq then "1" else "0"}|{int resultType}|{if prepare then "1" else "0"}"""
+                                    Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr true))
+                                ]))
+
+                        QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, typeof<ProvidedCommandSingleStatement>, designTimeConfig, xctor, methodName, sqlStatement)
                     | _ ->
                         let cmdProvidedType = ProvidedTypeDefinition (commandTypeName, Some typeof<ProvidedCommand>, hideObjectMethods = true)
                         commands.AddMember cmdProvidedType
 
-                        QuotationsFactory.AddTopLevelTypes cmdProvidedType parameters resultType customTypes statements
+                        QuotationsFactory.AddTopLevelTypes cmdProvidedType typeof<ProvidedCommand> parameters singleRow resultType collectionType customTypes statements
                             (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType) rawMode
-
-                        let collectionType =
-                            if singleRow then
-                                CollectionTypeInt.Option
-                            else
-                                match collectionType with
-                                | CollectionType.Array -> CollectionTypeInt.Array
-                                | CollectionType.ResizeArray -> CollectionTypeInt.ResizeArray
-                                | CollectionType.List -> CollectionTypeInt.List
-                                | CollectionType.LazySeq -> CollectionTypeInt.LazySeq
-                                | _ -> failwithf "Unmapped collection type %A" collectionType
 
                         let designTimeConfig = 
                             Expr.Lambda (
                                 Var ("x", typeof<unit>),
                                 Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
-                                    Expr.Value $"""{int resultType}|{int collectionType}|{if prepare then "1" else "0"}"""
+                                    Expr.Value $"""{int resultType}|{int collectionType}|{if prepare then "1" else "0"}|{if singleRow then "1" else "0"}"""
                                     QuotationsFactory.BuildDataColumnsExpr (statements, resultType <> ResultType.DataTable)
                                 ]))
 
-                        QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, designTimeConfig, xctor, methodName, sqlStatement)
+                        QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, typeof<ProvidedCommand>, designTimeConfig, xctor, methodName, sqlStatement)
 
                 rootType.AddMember method
                 method)

@@ -16,8 +16,6 @@ type Utils () =
     static let getColumnMapping =
         let cache = ConcurrentDictionary<Type, obj -> obj> ()
         let factory = Func<_, _>(fun (typeParam: Type) ->
-            // PreComputeUnionConstructor returns obj[] -> obj, which would require an extra array allocation when creating option values
-            // Since we're only interested in Some (one argument) here, the array can be left out
             let param = Expression.Parameter typeof<obj>
             let expr =
                 Expression.Lambda<Func<obj, obj>> (

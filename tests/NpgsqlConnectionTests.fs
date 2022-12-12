@@ -43,9 +43,6 @@ let selectFromPartitionedTable = "select * from logs where log_time between '201
 let selectFromSpecificPartition = "select * from logs_2019 where log_time between '2019-01-01' and '2019-12-31'"
 
 [<Literal>]
-let selectFromMaterializedView = "select some_data, title from long_films"
-
-[<Literal>]
 let getActorsAndFilms = "select * from actor limit 5; select * from film limit 5"
 
 [<Literal>]
@@ -624,7 +621,7 @@ let selectBytea() =
 
 [<Fact>]
 let ``Select from materialized view``() =
-    use cmd = DvdRental.CreateCommand<selectFromMaterializedView, SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"select some_data, title from long_films limit 1", SingleRow = true>(connectionString)
     let actual = cmd.TaskAsyncExecute().Result.Value
     Assert.Equal<int[]>([|1;2;3|], actual.some_data.Value)
     Assert.True(String.IsNullOrWhiteSpace actual.title.Value |> not)
@@ -857,8 +854,8 @@ let assertEqualFilmIdRating (x: FilmIdRating) (y: FilmIdRating) =
 
 [<Fact>]
 let ``Record type reused regardless of column order``() =
-    use cmd1 = DvdRentalWithTypeReuse.CreateCommand<"select film_id, rating from film", SingleRow = true>(connectionString)
-    use cmd2 = DvdRentalWithTypeReuse.CreateCommand<"select rating, film_id from film", SingleRow = true>(connectionString)
+    use cmd1 = DvdRentalWithTypeReuse.CreateCommand<"select film_id, rating from film limit 1", SingleRow = true>(connectionString)
+    use cmd2 = DvdRentalWithTypeReuse.CreateCommand<"select rating, film_id from film limit 1", SingleRow = true>(connectionString)
     let actual1 = cmd1.TaskAsyncExecute().Result.Value
     let actual2 = cmd2.TaskAsyncExecute().Result.Value
 

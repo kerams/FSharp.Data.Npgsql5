@@ -12,20 +12,13 @@ open type Utils
 [<assembly: CompilerServices.TypeProviderAssembly("FSharp.Data.Npgsql.DesignTime")>]
 do ()
 
-[<EditorBrowsable(EditorBrowsableState.Never)>]
-type CollectionTypeInt =
-    | List = 0
-    | Array = 1
-    | ResizeArray = 2
-    | LazySeq = 3
-    | Option = 4
-
 [<EditorBrowsable(EditorBrowsableState.Never); NoEquality; NoComparison>]
 type DesignTimeConfig = {
     ResultType: ResultType
-    CollectionType: CollectionTypeInt
+    CollectionType: CollectionType
     ResultSets: ResultSetDefinition[]
     Prepare: bool
+    SingleRow: bool
 }
     with
         static member Create (stringValues: string, columns: DataColumn[][]) =
@@ -36,6 +29,7 @@ type DesignTimeConfig = {
                 CollectionType = int split.[1] |> enum
                 ResultSets = columns |> Array.map (fun r -> CreateResultSetDefinition (r, resultType))
                 Prepare = split.[2] = "1"
+                SingleRow = split.[3] = "1"
             }
 
 [<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
@@ -53,17 +47,13 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
             cfg
 
     static let getReaderBehavior (closeConnection, cfg) = 
-        // Don't pass CommandBehavior.SingleRow to Npgsql, because it only applies to the first row of the first result set and all other result sets are completely ignored
-        if cfg.CollectionType = CollectionTypeInt.Option && cfg.ResultSets.Length = 1 then CommandBehavior.SingleRow else CommandBehavior.Default
-        ||| if cfg.ResultType = ResultType.DataTable then CommandBehavior.KeyInfo else CommandBehavior.Default
+        if cfg.ResultType = ResultType.DataTable then CommandBehavior.KeyInfo else CommandBehavior.Default
         ||| if closeConnection then CommandBehavior.CloseConnection else CommandBehavior.Default
 
     member val NpgsqlCommand = _cmd
 
     interface IDisposable with
-        member x.Dispose () =
-            if cfg.CollectionType <> CollectionTypeInt.LazySeq then
-                x.NpgsqlCommand.Dispose ()
+        member x.Dispose () = x.NpgsqlCommand.Dispose ()
 
     static member internal VerifyOutputColumns(cursor: Common.DbDataReader, expectedColumns: DataColumn[]) =
         if cursor.FieldCount < expectedColumns.Length then
@@ -132,61 +122,20 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
             return ProvidedCommand.LoadDataTable reader (x.NpgsqlCommand.Clone()) cfg.ResultSets.[0].ExpectedColumns
         }
 
-    static member internal ExecuteSingle<'TItem> () = Func<_, _, _, _>(fun reader resultSetDefinition cfg -> task {
+    static member private ExecuteSingle<'TItem> () = Func<_, _, _, _>(fun reader resultSetDefinition cfg -> task {
         let! xs = MapRowValues<'TItem> (reader, cfg.ResultType, resultSetDefinition)
 
         return
             match cfg.CollectionType with
-            | CollectionTypeInt.Option ->
+            | _ when cfg.SingleRow ->
                 ResizeArrayToOption xs |> box
-            | CollectionTypeInt.Array ->
+            | CollectionType.Array ->
                 xs.ToArray () |> box
-            | CollectionTypeInt.List ->
+            | CollectionType.List ->
                 ResizeArrayToList xs |> box
             | _ ->
                 box xs })
             
-    member x.ExecuteSingleStatement<'TItem> () =
-        if cfg.CollectionType = CollectionTypeInt.LazySeq then
-            task {
-                let! reader = x.GetDataReader ()
-                
-                let xs =
-                    if cfg.ResultSets.[0].ExpectedColumns.Length > 1 then
-                        MapRowValuesOntoTupleLazy<'TItem> (reader, cfg.ResultType, cfg.ResultSets.[0])
-                    else
-                        MapRowValuesLazy<'TItem> (reader, cfg.ResultSets.[0])
-
-                return new LazySeq<'TItem> (xs, reader, x.NpgsqlCommand)
-            }
-            |> box
-        else
-            let xs = task {
-                use! reader = x.GetDataReader ()
-                return! MapRowValues<'TItem> (reader, cfg.ResultType, cfg.ResultSets.[0]) }
-
-            match cfg.CollectionType with
-            | CollectionTypeInt.Option ->
-                task {
-                    let! xs = xs
-                    return ResizeArrayToOption xs
-                }
-                |> box
-            | CollectionTypeInt.Array ->
-                task {
-                    let! xs = xs
-                    return xs.ToArray ()
-                }
-                |> box
-            | CollectionTypeInt.List ->
-                task {
-                    let! xs = xs
-                    return ResizeArrayToList xs
-                }
-                |> box
-            | _ ->
-                box xs
-
     static member private ReadResultSet (cursor: Common.DbDataReader, resultSetDefinition, cfg) =
         let func =
             let mutable x = Unchecked.defaultof<_>
@@ -254,11 +203,92 @@ type ProvidedCommandNonQuery (prepare: bool, _cmd: NpgsqlCommand) =
             return! x.NpgsqlCommand.ExecuteNonQueryAsync ()
         }
 
+[<EditorBrowsable(EditorBrowsableState.Never); NoEquality; NoComparison>]
+type DesignTimeConfigSingleStatement = {
+    Dispose: bool
+    ResultType: ResultType
+    ResultSet: ResultSetDefinition
+    Prepare: bool
+}
+    with
+        static member Create (stringValues: string, columns: DataColumn[]) =
+            let split = stringValues.Split '|'
+            let resultType = int split.[1] |> enum
+            {
+                Dispose = split.[0] = "1"
+                ResultType = resultType
+                ResultSet = CreateResultSetDefinition (columns, resultType)
+                Prepare = split.[2] = "1"
+            }
+
 [<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
-type ProvidedCommandSingleStatement (dispose: bool, prepare: bool, _cmd: NpgsqlCommand) =
+type ProvidedCommandSingleStatement (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfigSingleStatement, _cmd: NpgsqlCommand) =
+    static let cfgCache = ConcurrentDictionary ()
+
+    let cfg =
+        let mutable x = Unchecked.defaultof<_>
+        if cfgCache.TryGetValue (commandNameHash, &x) then
+            x
+        else
+            let cfg = cfgBuilder ()
+            cfgCache.[commandNameHash] <- cfg
+            cfg
+
     member val NpgsqlCommand = _cmd
 
     interface IDisposable with
         member x.Dispose () =
-            if dispose then
+            if cfg.Dispose then
                 x.NpgsqlCommand.Dispose ()
+
+    member private x.GetDataReader () = task {
+        let openHere = x.NpgsqlCommand.Connection.State = ConnectionState.Closed
+
+        if openHere then
+            do! x.NpgsqlCommand.Connection.OpenAsync ()
+
+        if cfg.Prepare then
+            do! x.NpgsqlCommand.PrepareAsync ()
+
+        let! cursor = x.NpgsqlCommand.ExecuteReaderAsync (if openHere then CommandBehavior.CloseConnection else CommandBehavior.Default)
+        return cursor :?> NpgsqlDataReader }
+
+    member x.ExecuteLazySeq<'TItem> () =
+        task {
+            let! reader = x.GetDataReader ()
+            
+            let xs =
+                if cfg.ResultSet.ExpectedColumns.Length > 1 then
+                    MapRowValuesOntoTupleLazy<'TItem> (reader, cfg.ResultType, cfg.ResultSet)
+                else
+                    MapRowValuesLazy<'TItem> (reader, cfg.ResultSet)
+
+            return new LazySeq<'TItem> (xs, reader, x.NpgsqlCommand)
+        }
+    
+    member x.ExecuteResizeArray<'TItem> () =
+        task {
+            use! reader = x.GetDataReader ()
+            return! MapRowValues<'TItem> (reader, cfg.ResultType, cfg.ResultSet)
+        }
+
+    member x.ExecuteArray<'TItem> () =
+        task {
+            use! reader = x.GetDataReader ()
+            let! res = MapRowValues<'TItem> (reader, cfg.ResultType, cfg.ResultSet)
+            return res.ToArray ()
+        }
+
+    member x.ExecuteList<'TItem> () =
+        task {
+            use! reader = x.GetDataReader ()
+            let! res = MapRowValues<'TItem> (reader, cfg.ResultType, cfg.ResultSet)
+            return ResizeArrayToList res
+        }
+
+    member x.ExecuteSingleRow<'TItem> () =
+        task {
+            use! reader = x.GetDataReader ()
+            let! res = MapRowValues<'TItem> (reader, cfg.ResultType, cfg.ResultSet)
+            return ResizeArrayToOption res
+        }

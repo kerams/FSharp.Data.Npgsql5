@@ -445,8 +445,8 @@ type internal QuotationsFactory () =
 
             ProvidedMethod (methodName, parameters, cmdProvidedType, body, true)
 
-    static member GetCommandFactoryMethod (cmdProvidedType: ProvidedTypeDefinition, designTimeConfig, isExtended, methodName, sqlStatement: string) = 
-        let ctorImpl = typeof<ProvidedCommand>.GetConstructors() |> Array.exactlyOne
+    static member GetCommandFactoryMethod (cmdProvidedType: ProvidedTypeDefinition, providedCommandType: Type, designTimeConfig, isExtended, methodName, sqlStatement: string) = 
+        let ctorImpl = providedCommandType.GetConstructors() |> Array.exactlyOne
 
         if isExtended then
             let body (Arg3 (conn, tran, commandTimeout)) =
@@ -487,16 +487,15 @@ type internal QuotationsFactory () =
                 | _ ->
                     QuotationsFactory.DataColumnArrayEmptyExpr))
 
-    static member AddTopLevelTypes (cmdProvidedType: ProvidedTypeDefinition) parameters resultType customTypes statements typeToAttachTo rawMode =
+    static member AddTopLevelTypes (cmdProvidedType: ProvidedTypeDefinition) (providedCommandType: Type) parameters singleRow resultType collectionType customTypes statements typeToAttachTo rawMode =
         let executeArgs = QuotationsFactory.GetExecuteArgs (parameters, customTypes)
         
-        let addMethodRedirects (outputType: Type) resultType xmlDoc =
+        let addMethodRedirects (outputType: Type) =
             let methodName, generic =
                 match resultType, statements with
                 | ResultType.DataReader, _ -> nameof Unchecked.defaultof<ProvidedCommand>.GetDataReader, None
                 | ResultType.DataTable, [ _ ] -> nameof Unchecked.defaultof<ProvidedCommand>.GetDataTable, None
                 | ResultType.DataTable, _ -> nameof Unchecked.defaultof<ProvidedCommand>.GetDataTables, None
-                | _, [ { Type = NonQuery } ] -> failwith "nope"
                 | _, [ { Type = Query columns } ] ->
                     let t =
                         match columns with
@@ -514,19 +513,25 @@ type internal QuotationsFactory () =
                             
                             Reflection.FSharpType.MakeTupleType (columns |> List.map (fun c -> if c.Nullable then typedefof<_ option>.MakeGenericType c.ClrType else c.ClrType) |> List.toArray)
                     
-                    nameof Unchecked.defaultof<ProvidedCommand>.ExecuteSingleStatement, Some t
+                    let methodName =
+                        match collectionType with
+                        | _ when singleRow -> nameof Unchecked.defaultof<ProvidedCommandSingleStatement>.ExecuteSingleRow
+                        | CollectionType.LazySeq -> nameof Unchecked.defaultof<ProvidedCommandSingleStatement>.ExecuteLazySeq
+                        | CollectionType.List -> nameof Unchecked.defaultof<ProvidedCommandSingleStatement>.ExecuteList
+                        | CollectionType.Array -> nameof Unchecked.defaultof<ProvidedCommandSingleStatement>.ExecuteArray
+                        | _ -> nameof Unchecked.defaultof<ProvidedCommandSingleStatement>.ExecuteResizeArray
+
+                    methodName, Some t
                 | _ -> nameof Unchecked.defaultof<ProvidedCommand>.ExecuteMultiStatement, None
 
-            let m = QuotationsFactory.AddGeneratedMethod (typeof<ProvidedCommand>, parameters, executeArgs, generic, (typedefof<Task<_>>.MakeGenericType outputType), methodName, rawMode)
-            Option.iter m.AddXmlDoc xmlDoc
-            cmdProvidedType.AddMember m
+            QuotationsFactory.AddGeneratedMethod (providedCommandType, parameters, executeArgs, generic, (typedefof<Task<_>>.MakeGenericType outputType), methodName, rawMode)
+            |> cmdProvidedType.AddMember
 
         match statements with
         | _ when resultType = ResultType.DataReader ->
-            addMethodRedirects typeof<NpgsqlDataReader> resultType None
+            addMethodRedirects typeof<NpgsqlDataReader>
         | [ { ReturnType = Some returnType; Sql = sql } ] ->
-            let xmlDoc = if returnType.Single = typeof<int> then sprintf "Number of rows affected by \"%s\"." sql |> Some else None
-            addMethodRedirects returnType.Single resultType xmlDoc
+            addMethodRedirects returnType.Single
             QuotationsFactory.AddProvidedTypeToDeclaring resultType returnType typeToAttachTo
         | _ ->
             let resultSetsType = ProvidedTypeDefinition ("ResultSets", baseType = Some typeof<obj[]>, hideObjectMethods = true)
@@ -546,7 +551,7 @@ type internal QuotationsFactory () =
 
                 statement.ReturnType |> Option.iter (fun rt -> QuotationsFactory.AddProvidedTypeToDeclaring resultType rt typeToAttachTo))
 
-            addMethodRedirects resultSetsType resultType None
+            addMethodRedirects resultSetsType
             cmdProvidedType.AddMember resultSetsType
 
 
