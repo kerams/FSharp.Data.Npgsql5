@@ -199,61 +199,63 @@ type Utils () =
         let [| columnName; typeName; nullable |] = stringValues.Split '|'
         new DataColumn (columnName, Utils.GetType typeName, AllowDBNull = (nullable = "1"))
 
-    static member MapRowValuesOntoTuple<'TItem> (cursor: DbDataReader, resultType, resultSet) = task {
-        let results = ResizeArray<'TItem> ()
-        let rowReader = getRowToTupleReader resultSet (resultType = ResultType.Records)
-        
-        let! go = cursor.ReadAsync ()
-        let mutable go = go
-
-        while go do
-            rowReader.Invoke cursor
-            |> unbox
-            |> results.Add
-
-            let! cont = cursor.ReadAsync ()
-            go <- cont
-
-        return results }
-
-    static member MapRowValuesOntoTupleLazy<'TItem> (cursor: DbDataReader, resultType, resultSet) =
-        seq {
-            let rowReader = getRowToTupleReader resultSet (resultType = ResultType.Records)
-
-            while cursor.Read () do
-                rowReader.Invoke cursor |> unbox<'TItem>
-        }
-
     static member MapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet: ResultSetDefinition) =
         if resultSet.ExpectedColumns.Length > 1 then
-            Utils.MapRowValuesOntoTuple<'TItem> (cursor, resultType, resultSet)
-        else task {
-            let columnMapping = getColumnMapping resultSet.ExpectedColumns.[0]
-            let results = ResizeArray<'TItem> ()
-            
-            let! go = cursor.ReadAsync ()
-            let mutable go = go
+            task {
+                let results = ResizeArray<'TItem> ()
+                let rowReader = getRowToTupleReader resultSet (resultType = ResultType.Records)
+                
+                let! go = cursor.ReadAsync ()
+                let mutable go = go
 
-            while go do
-                cursor.GetValue 0
-                |> columnMapping
-                |> unbox
-                |> results.Add
+                while go do
+                    rowReader.Invoke cursor
+                    |> unbox
+                    |> results.Add
 
-                let! cont = cursor.ReadAsync ()
-                go <- cont
+                    let! cont = cursor.ReadAsync ()
+                    go <- cont
 
-            return results }
+                return results
+            }
+        else
+            task {
+                let columnMapping = getColumnMapping resultSet.ExpectedColumns.[0]
+                let results = ResizeArray<'TItem> ()
+                
+                let! go = cursor.ReadAsync ()
+                let mutable go = go
 
-    static member MapRowValuesLazy<'TItem> (cursor: DbDataReader, resultSet) =
-        seq {
-            let columnMapping = getColumnMapping resultSet.ExpectedColumns.[0]
+                while go do
+                    cursor.GetValue 0
+                    |> columnMapping
+                    |> unbox
+                    |> results.Add
 
-            while cursor.Read () do
-                cursor.GetValue 0
-                |> columnMapping
-                |> unbox<'TItem>
-        }
+                    let! cont = cursor.ReadAsync ()
+                    go <- cont
+
+                return results
+            }
+
+    static member MapRowValuesLazy<'TItem> (cursor: DbDataReader, resultType, resultSet) =
+        if resultSet.ExpectedColumns.Length > 1 then
+            seq {
+                let rowReader = getRowToTupleReader resultSet (resultType = ResultType.Records)
+
+                while cursor.Read () do
+                    rowReader.Invoke cursor
+                    |> unbox<'TItem>
+            }
+        else
+            seq {
+                let columnMapping = getColumnMapping resultSet.ExpectedColumns.[0]
+
+                while cursor.Read () do
+                    cursor.GetValue 0
+                    |> columnMapping
+                    |> unbox<'TItem>
+            }
     
     static member OptionToObj<'a> (value: obj) =
         match value :?> 'a option with

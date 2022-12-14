@@ -256,13 +256,7 @@ type ProvidedCommandSingleStatement (commandNameHash: int, cfgBuilder: unit -> D
     member x.ExecuteLazySeq<'TItem> () =
         task {
             let! reader = x.GetDataReader ()
-            
-            let xs =
-                if cfg.ResultSet.ExpectedColumns.Length > 1 then
-                    MapRowValuesOntoTupleLazy<'TItem> (reader, cfg.ResultType, cfg.ResultSet)
-                else
-                    MapRowValuesLazy<'TItem> (reader, cfg.ResultSet)
-
+            let xs = MapRowValuesLazy<'TItem> (reader, cfg.ResultType, cfg.ResultSet)
             return new LazySeq<'TItem> (xs, reader, x.NpgsqlCommand)
         }
     
