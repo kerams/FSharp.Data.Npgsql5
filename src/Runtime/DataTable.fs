@@ -29,7 +29,7 @@ type ResultSetDefinition = {
     ExpectedColumns: DataColumn[] }
 
 [<Sealed>]
-type LazySeq<'a> (s: 'a seq, reader: Common.DbDataReader, cmd: NpgsqlCommand) =
+type LazySeq<'a> (s: 'a seq, reader: NpgsqlDataReader, cmd: NpgsqlCommand) =
     member val Seq = s
 
     interface System.IDisposable with

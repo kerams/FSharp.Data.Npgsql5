@@ -3,7 +3,6 @@ namespace FSharp.Data.Npgsql
 open System
 open System.Data
 open System.Data.Common
-open System.Collections.Concurrent
 open System.ComponentModel
 open System.Linq.Expressions
 open Npgsql
@@ -13,28 +12,18 @@ open NpgsqlTypes
 
 [<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
 type Utils () =
-    static let getColumnMapping =
-        let cache = ConcurrentDictionary<Type, obj -> obj> ()
-        let factory = Func<_, _>(fun (typeParam: Type) ->
-            let param = Expression.Parameter typeof<obj>
-            let expr =
-                Expression.Lambda<Func<obj, obj>> (
-                    Expression.Condition (
-                        Expression.Call (typeof<Convert>.GetMethod (nameof Convert.IsDBNull, Reflection.BindingFlags.Static ||| Reflection.BindingFlags.Public), param),
-                        Expression.Constant (null, typedefof<_ option>.MakeGenericType typeParam),
-                        Expression.New (
-                            typedefof<_ option>.MakeGenericType(typeParam).GetConstructor [| typeParam |],
-                            Expression.Convert (param, typeParam)
-                        )
-                    ),
-                    param)
+    static member BuildRowReader (resultSet, resultType) =
+        let singleColumnRead (c: DataColumn) param: Expression =
+            let v = Expression.Call (param, typeof<NpgsqlDataReader>.GetMethod(nameof Unchecked.defaultof<NpgsqlDataReader>.GetFieldValue).MakeGenericMethod c.DataType, Expression.Constant 0)
 
-            expr.Compile().Invoke)
+            if c.AllowDBNull then
+                Expression.Condition (
+                    Expression.Call (param, typeof<NpgsqlDataReader>.GetMethod (nameof Unchecked.defaultof<NpgsqlDataReader>.IsDBNull), Expression.Constant 0),
+                    Expression.Constant (null, typedefof<_ option>.MakeGenericType c.DataType),
+                    Expression.New (typedefof<_ option>.MakeGenericType(c.DataType).GetConstructor [| c.DataType |], v))
+            else
+                v
 
-        fun (x: DataColumn) -> if x.AllowDBNull then cache.GetOrAdd (x.DataType, factory) else id
-
-    static let getRowToTupleReader =
-        let cache = ConcurrentDictionary<int, Func<DbDataReader, obj>> ()
         let rec constituentTuple (t: Type) (columns: (int * DataColumn)[]) param startIndex: Expression =
             let genericArgs = t.GetGenericArguments ()
             Expression.New (
@@ -47,33 +36,25 @@ type Utils () =
                             constituentTuple genericArg columns param (startIndex + 7)
                         else
                             let i, c = columns.[paramIndex + startIndex]
-                            let v = Expression.Call (param, typeof<DbDataReader>.GetMethod(nameof Unchecked.defaultof<DbDataReader>.GetFieldValue).MakeGenericMethod c.DataType, Expression.Constant i)
+                            let v = Expression.Call (param, typeof<NpgsqlDataReader>.GetMethod(nameof Unchecked.defaultof<NpgsqlDataReader>.GetFieldValue).MakeGenericMethod c.DataType, Expression.Constant i)
 
                             if c.AllowDBNull then
                                 Expression.Condition (
-                                    Expression.Call (param, typeof<DbDataReader>.GetMethod (nameof Unchecked.defaultof<DbDataReader>.IsDBNull), Expression.Constant i),
+                                    Expression.Call (param, typeof<NpgsqlDataReader>.GetMethod (nameof Unchecked.defaultof<NpgsqlDataReader>.IsDBNull), Expression.Constant i),
                                     Expression.Constant (null, typedefof<_ option>.MakeGenericType c.DataType),
                                     Expression.New (typedefof<_ option>.MakeGenericType(c.DataType).GetConstructor [| c.DataType |], v))
                             else
                                 v
-                ]) :> Expression
+                ])
 
-        fun resultSet sortColumns ->
-            let mutable func = Unchecked.defaultof<_>
-            if cache.TryGetValue (resultSet.ExpectedColumns.GetHashCode (), &func) then
-                func
-            else
-                let func =
-                    let param = Expression.Parameter typeof<DbDataReader>
-                    let expr =
-                        Expression.Lambda<Func<DbDataReader, obj>> (
-                            constituentTuple resultSet.ErasedRowType (resultSet.ExpectedColumns |> Array.indexed |> (if sortColumns then Array.sortBy (fun (_, c) -> c.ColumnName) else id)) param 0,
-                            param)
+        let sortColumns = resultType = ResultType.Records
+        let param = Expression.Parameter typeof<NpgsqlDataReader>
+        let body =
+            match resultSet.ExpectedColumns with
+            | [| c |] -> singleColumnRead c param
+            | _ -> constituentTuple resultSet.ErasedRowType (resultSet.ExpectedColumns |> Array.indexed |> (if sortColumns then Array.sortBy (fun (_, c) -> c.ColumnName) else id)) param 0
 
-                    expr.Compile ()
-
-                cache.[resultSet.ExpectedColumns.GetHashCode ()] <- func
-                func
+        Expression.Lambda<Func<NpgsqlDataReader, obj>>(body, param).Compile ()
 
     static member UnwrapOptionToDb z =
         match z with
@@ -199,63 +180,30 @@ type Utils () =
         let [| columnName; typeName; nullable |] = stringValues.Split '|'
         new DataColumn (columnName, Utils.GetType typeName, AllowDBNull = (nullable = "1"))
 
-    static member MapRowValues<'TItem> (cursor: DbDataReader, resultType, resultSet: ResultSetDefinition) =
-        if resultSet.ExpectedColumns.Length > 1 then
-            task {
-                let results = ResizeArray<'TItem> ()
-                let rowReader = getRowToTupleReader resultSet (resultType = ResultType.Records)
-                
-                let! go = cursor.ReadAsync ()
-                let mutable go = go
+    static member MapRowValues<'TItem> (cursor: NpgsqlDataReader, rowReader: Func<NpgsqlDataReader, obj>) =
+        task {
+            let results = ResizeArray<'TItem> ()
+            
+            let! go = cursor.ReadAsync ()
+            let mutable go = go
 
-                while go do
-                    rowReader.Invoke cursor
-                    |> unbox
-                    |> results.Add
+            while go do
+                rowReader.Invoke cursor
+                |> unbox
+                |> results.Add
 
-                    let! cont = cursor.ReadAsync ()
-                    go <- cont
+                let! cont = cursor.ReadAsync ()
+                go <- cont
 
-                return results
-            }
-        else
-            task {
-                let columnMapping = getColumnMapping resultSet.ExpectedColumns.[0]
-                let results = ResizeArray<'TItem> ()
-                
-                let! go = cursor.ReadAsync ()
-                let mutable go = go
+            return results
+        }
 
-                while go do
-                    cursor.GetValue 0
-                    |> columnMapping
-                    |> unbox
-                    |> results.Add
-
-                    let! cont = cursor.ReadAsync ()
-                    go <- cont
-
-                return results
-            }
-
-    static member MapRowValuesLazy<'TItem> (cursor: DbDataReader, resultType, resultSet) =
-        if resultSet.ExpectedColumns.Length > 1 then
-            seq {
-                let rowReader = getRowToTupleReader resultSet (resultType = ResultType.Records)
-
-                while cursor.Read () do
-                    rowReader.Invoke cursor
-                    |> unbox<'TItem>
-            }
-        else
-            seq {
-                let columnMapping = getColumnMapping resultSet.ExpectedColumns.[0]
-
-                while cursor.Read () do
-                    cursor.GetValue 0
-                    |> columnMapping
-                    |> unbox<'TItem>
-            }
+    static member MapRowValuesLazy<'TItem> (cursor: NpgsqlDataReader, rowReader: Func<NpgsqlDataReader, obj>) =
+        seq {
+            while cursor.Read () do
+                rowReader.Invoke cursor
+                |> unbox<'TItem>
+        }
     
     static member OptionToObj<'a> (value: obj) =
         match value :?> 'a option with
