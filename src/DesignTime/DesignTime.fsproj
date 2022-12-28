@@ -10,7 +10,7 @@
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <NoWarn>FS0044,FS3218,FS0026,FS3548,FS0855</NoWarn>
+    <NoWarn>FS0044</NoWarn>
     <LangVersion>6.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -23,8 +23,8 @@
     <Compile Include="..\Runtime\ProvidedCommand.fs">
       <Link>ProvidedCommand.fs</Link>
     </Compile>
-    <Compile Include="..\..\paket-files\tpsdk\demetrixbio\FSharp.TypeProviders.SDK\src\ProvidedTypes.fsi" Link="ProvidedTypes.fsi" />
-    <Compile Include="..\..\paket-files\tpsdk\demetrixbio\FSharp.TypeProviders.SDK\src\ProvidedTypes.fs" Link="ProvidedTypes.fs" />
+    <Compile Include="..\..\paket-files\tpsdk\kerams\FSharp.TypeProviders.SDK\src\ProvidedTypes.fsi" Link="ProvidedTypes.fsi" />
+    <Compile Include="..\..\paket-files\tpsdk\kerams\FSharp.TypeProviders.SDK\src\ProvidedTypes.fs" Link="ProvidedTypes.fs" />
     <Compile Include="InformationSchema.fs" />
     <Compile Include="QuotationsFactory.fs" />
     <Compile Include="NpgsqlConnectionProvider.fs" />
