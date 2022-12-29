@@ -115,5 +115,5 @@ STORAGE: NONE
 RESTRICTION: == netstandard2.0
 GITHUB
   remote: kerams/FSharp.TypeProviders.SDK
-    src/ProvidedTypes.fs (104bbe2b26bf64d07331bc7306d59ed4680dc824)
-    src/ProvidedTypes.fsi (104bbe2b26bf64d07331bc7306d59ed4680dc824)
+    src/ProvidedTypes.fs (05910a8380e50deec6c3a67da97ce9d7482226db)
+    src/ProvidedTypes.fsi (05910a8380e50deec6c3a67da97ce9d7482226db)

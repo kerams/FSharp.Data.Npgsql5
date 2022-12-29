@@ -12,6 +12,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>FS0044</NoWarn>
     <LangVersion>6.0</LangVersion>
+    <DefineConstants>NO_GENERATIVE</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\Runtime\DataTable.fs" />
