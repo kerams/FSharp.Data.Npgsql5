@@ -3,8 +3,8 @@ framework: netstandard2.0
 storage: none
 
 nuget FSharp.Core >= 7 lowest_matching: true
-nuget Npgsql >= 6 < 8
-nuget Npgsql.NetTopologySuite >= 6 < 8
+nuget Npgsql >= 6 < 9
+nuget Npgsql.NetTopologySuite >= 6 < 9
 
 group tests
   frameworks net7.0
@@ -14,8 +14,8 @@ group tests
   nuget xunit
   nuget xunit.runner.visualstudio
   nuget FSharp.Core ~> 7
-  nuget Npgsql >= 6 < 8 prerelease
-  nuget Npgsql.NetTopologySuite >= 6 < 8 prerelease
+  nuget Npgsql >= 6 < 9 prerelease
+  nuget Npgsql.NetTopologySuite >= 6 < 9 prerelease
 
 group tpsdk
   frameworks netstandard2.0
