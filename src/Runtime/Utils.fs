@@ -181,7 +181,7 @@ type Utils () =
         new DataColumn (columnName, Utils.GetType typeName, AllowDBNull = (nullable = "1"))
 
     static member MapRowValues<'TItem> (cursor: NpgsqlDataReader, rowReader: Func<NpgsqlDataReader, obj>) =
-        task {
+        backgroundTask {
             let results = ResizeArray<'TItem> ()
             
             let! go = cursor.ReadAsync ()

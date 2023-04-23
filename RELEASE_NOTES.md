@@ -1,3 +1,13 @@
+### 3.0.0-alpha-1 - April 23rd, 2023
+- Allow the use of Npgsql 8
+- Remove Ply dependency
+- Remove synchronous and `async` commands - only tasks are supported
+- Run-time optimizations
+  - Use background tasks
+  - Refactor internal locking and caching
+  - Remove allocations connected to command parameters
+  - Remove code verifying that result sets returned at run time match the design-time schema
+
 ### 2.1.0 - July 16th, 2022
 - Allow the use of Npgsql 7
 

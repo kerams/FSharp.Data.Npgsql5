@@ -67,7 +67,7 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
     interface IDisposable with
         member x.Dispose () = x.NpgsqlCommand.Dispose ()
 
-    member x.GetDataReader () = task {
+    member x.GetDataReader () = backgroundTask {
         let openHere = x.NpgsqlCommand.Connection.State = ConnectionState.Closed
 
         if openHere then
@@ -89,7 +89,7 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
         result
 
     member x.GetDataTables () =
-        task {
+        backgroundTask {
             use! cursor = x.GetDataReader ()
 
             // No explicit NextResult calls, Load takes care of it
@@ -106,12 +106,12 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
         }
 
     member x.GetDataTable () =
-        task {
+        backgroundTask {
             use! reader = x.GetDataReader () 
             return ProvidedCommand.LoadDataTable reader (x.NpgsqlCommand.Clone ()) ((fst cfg.ResultSets.[0]).ExpectedColumns)
         }
 
-    static member internal ReadResultSet<'TItem> (rowReader, singleRow, collectionType) = Func<NpgsqlDataReader, Task<obj>>(fun reader -> task {
+    static member internal ReadResultSet<'TItem> (rowReader, singleRow, collectionType) = Func<NpgsqlDataReader, Task<obj>>(fun reader -> backgroundTask {
         let! xs = MapRowValues<'TItem> (reader, rowReader)
 
         return
@@ -126,7 +126,7 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
                 box xs })
             
     member x.ExecuteMultiStatement () =
-        task {
+        backgroundTask {
             use! cursor = x.GetDataReader ()
             let results = Array.zeroCreate x.NpgsqlCommand.Statements.Count
 
@@ -158,7 +158,7 @@ type ProvidedCommandNonQuery (prepare: bool, _cmd: NpgsqlCommand) =
         member x.Dispose () = x.NpgsqlCommand.Dispose ()
 
     member x.ExecuteNonQuery () = 
-        task {
+        backgroundTask {
             let openHere = x.NpgsqlCommand.Connection.State = ConnectionState.Closed
 
             if openHere then
@@ -209,7 +209,7 @@ type ProvidedCommandSingleStatement (commandNameHash: int, cfgBuilder: unit -> D
             if cfg.Dispose then
                 x.NpgsqlCommand.Dispose ()
 
-    member private x.GetDataReader () = task {
+    member private x.GetDataReader () = backgroundTask {
         let openHere = x.NpgsqlCommand.Connection.State = ConnectionState.Closed
 
         if openHere then
@@ -222,34 +222,34 @@ type ProvidedCommandSingleStatement (commandNameHash: int, cfgBuilder: unit -> D
         return cursor :?> NpgsqlDataReader }
 
     member x.ExecuteLazySeq<'TItem> () =
-        task {
+        backgroundTask {
             let! reader = x.GetDataReader ()
             let xs = MapRowValuesLazy<'TItem> (reader, cfg.RowReader)
             return new LazySeq<'TItem> (xs, reader, x.NpgsqlCommand)
         }
     
     member x.ExecuteResizeArray<'TItem> () =
-        task {
+        backgroundTask {
             use! reader = x.GetDataReader ()
             return! MapRowValues<'TItem> (reader, cfg.RowReader)
         }
 
     member x.ExecuteArray<'TItem> () =
-        task {
+        backgroundTask {
             use! reader = x.GetDataReader ()
             let! res = MapRowValues<'TItem> (reader, cfg.RowReader)
             return res.ToArray ()
         }
 
     member x.ExecuteList<'TItem> () =
-        task {
+        backgroundTask {
             use! reader = x.GetDataReader ()
             let! res = MapRowValues<'TItem> (reader, cfg.RowReader)
             return ResizeArrayToList res
         }
 
     member x.ExecuteSingleRow<'TItem> () =
-        task {
+        backgroundTask {
             use! reader = x.GetDataReader ()
             let! res = MapRowValues<'TItem> (reader, cfg.RowReader)
             return ResizeArrayToOption res

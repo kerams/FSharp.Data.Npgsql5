@@ -2,7 +2,7 @@ source https://api.nuget.org/v3/index.json
 framework: netstandard2.0
 storage: none
 
-nuget FSharp.Core >= 7 lowest_matching: true
+nuget FSharp.Core >= 7
 nuget Npgsql >= 6 < 9
 nuget Npgsql.NetTopologySuite >= 6 < 9
 
