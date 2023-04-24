@@ -56,10 +56,10 @@ type Utils () =
 
         Expression.Lambda<Func<NpgsqlDataReader, obj>>(body, param).Compile ()
 
-    static member UnwrapOptionToDb z =
+    static member SetOptionalParamValue (p: NpgsqlParameter) z =
         match z with
-        | Some z -> box z
-        | _ -> box DBNull.Value
+        | Some z -> p.Value <- z
+        | _ -> p.Value <- DBNull.Value
 
     static member ResizeArrayToList ra =
         let rec inner (ra: ResizeArray<'a>, index, acc) = 
@@ -79,9 +79,6 @@ type Utils () =
     static member val GetStatementIndex =
         let mi = typeof<NpgsqlDataReader>.GetProperty("StatementIndex", Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetMethod
         Delegate.CreateDelegate (typeof<Func<NpgsqlDataReader, int>>, mi) :?> Func<NpgsqlDataReader, int>
-
-    static member NpgsqlParameter (name, dbType: NpgsqlDbType, size, scale, precision, value: obj) = 
-        NpgsqlParameter (name, dbType, size, Scale = scale, Precision = precision, Value = value)
 
     static member NpgsqlCommand (cs, sql, timeout) =
         let cmd = new NpgsqlCommand (sql, new NpgsqlConnection (cs))

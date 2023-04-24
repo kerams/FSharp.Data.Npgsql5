@@ -71,49 +71,77 @@ type internal QuotationsFactory () =
     static member GetMapperFromOptionToObj (t: Type, value: Expr) =
         Expr.Call (typeof<Utils>.GetMethod(nameof Utils.OptionToObj).MakeGenericMethod t, [ Expr.Coerce (value, typeof<obj>) ])
 
+    static member Sequentials continuation exprs =
+        match exprs with
+        | [] -> continuation
+        | h :: t -> Expr.Sequential (h, QuotationsFactory.Sequentials continuation t)
+
     static member AddGeneratedMethod (providedCommandType: Type, sqlParameters: Parameter list, executeArgs: ProvidedParameter list, genericParameter, providedOutputType, name, rawMode) =
-        let setExtraPropsIfNecessary param paramExpr =
-            let paramExpr =
-                if param.Optional then
-                    Expr.Call (typeof<Utils>.GetMethod(nameof Utils.UnwrapOptionToDb).MakeGenericMethod param.DataType.ClrType, [ Expr.Coerce (paramExpr, typedefof<_ option>.MakeGenericType [| param.DataType.ClrType |]) ])
-                else
-                    Expr.Coerce (paramExpr, typeof<obj>)
+        let createParamNonGeneric param paramExpr =
+            let paramVar = Var ("p", typeof<NpgsqlParameter>)
+            let paramVarExpr = Expr.Var paramVar
 
-            Expr.Call (typeof<Utils>.GetMethod (nameof Utils.NpgsqlParameter), [ Expr.Value (if rawMode then null else param.Name); Expr.Value param.NpgsqlDbType; Expr.Value (if param.DataType.IsFixedLength then 0 else param.MaxLength); Expr.Value param.Scale; Expr.Value param.Precision; paramExpr ])
+            Expr.Let (
+                paramVar,
+                Expr.NewObject (typeof<NpgsqlParameter>.GetConstructor [| |], []),
+                [
+                    if param.Precision <> 0uy then
+                        Expr.PropertySet (paramVarExpr, typeof<NpgsqlParameter>.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Scale), Expr.Value param.Scale)
 
-        let setExtraPropsIfNecessary' param paramExpr =
+                    if param.Scale <> 0uy then
+                        Expr.PropertySet (paramVarExpr, typeof<NpgsqlParameter>.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Precision), Expr.Value param.Precision)
+
+                    if not rawMode then
+                        Expr.PropertySet (paramVarExpr, typeof<NpgsqlParameter>.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.ParameterName), Expr.Value param.Name)
+
+                    if not param.DataType.IsFixedLength && param.MaxLength > 0 then
+                        Expr.PropertySet (paramVarExpr, typeof<NpgsqlParameter>.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Size), Expr.Value param.MaxLength)
+
+                    Expr.PropertySet (paramVarExpr, typeof<NpgsqlParameter>.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.NpgsqlDbType), Expr.Value param.NpgsqlDbType) 
+
+                    if param.Optional then
+                        Expr.Call (typeof<Utils>.GetMethod(nameof Utils.SetOptionalParamValue).MakeGenericMethod param.DataType.ClrType, [ paramVarExpr; paramExpr ])
+                    else
+                        Expr.PropertySet (paramVarExpr, typeof<NpgsqlParameter>.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Value), Expr.Coerce (paramExpr, typeof<obj>))
+                ]
+                |> QuotationsFactory.Sequentials paramVarExpr
+            )
+
+        let createParamGeneric param paramExpr =
             let paramType = typedefof<NpgsqlParameter<_>>.MakeGenericType [| param.DataType.ClrType |]
             let newParam = Expr.NewObject (paramType.GetConstructor [| typeof<string>; param.DataType.ClrType |], [ Expr.Value (if rawMode then null else param.Name); paramExpr ])
 
             if param.Precision <> 0uy || param.Scale <> 0uy then
                 let paramVar = Var ("p", paramType)
+                let paramVarExpr = Expr.Var paramVar
 
                 Expr.Let (
                     paramVar,
                     newParam,
-                    Expr.Sequential (
-                        Expr.Sequential (
-                            Expr.PropertySet (Expr.Var paramVar, paramType.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Precision), Expr.Value param.Precision),
-                            Expr.PropertySet (Expr.Var paramVar, paramType.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Scale), Expr.Value param.Scale)
-                        ),
-                        Expr.Var paramVar
-                    )
+                    [
+                        if param.Precision <> 0uy then
+                            Expr.PropertySet (paramVarExpr, paramType.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Precision), Expr.Value param.Precision)
+
+                        if param.Scale <> 0uy then
+                            Expr.PropertySet (paramVarExpr, paramType.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Scale), Expr.Value param.Scale)
+                    ]
+                    |> QuotationsFactory.Sequentials paramVarExpr
                 )
             else
                 newParam
-                
-        let rec addParam paramsExpr (parameters: (Parameter * Expr) list) rawMode continuation =
-            match parameters with
-            | [] -> continuation
-            | (param, paramExpr) :: t ->
+
+        let addParams paramsExpr parameters continuation =
+            parameters
+            |> List.map (fun (param, paramExpr) ->
                 let newParam =
                     if param.DataType.ClrType.IsArray || param.Optional || param.DataType.IsUserDefinedType then
-                        setExtraPropsIfNecessary param paramExpr
+                        createParamNonGeneric param paramExpr
                     else
-                        setExtraPropsIfNecessary' param paramExpr
+                        createParamGeneric param paramExpr
 
-                let param = Expr.Call (paramsExpr, typeof<NpgsqlParameterCollection>.GetMethod ("Add", [| typeof<NpgsqlParameter> |]), [ newParam ])
-                Expr.Sequential (param, addParam paramsExpr t rawMode continuation)
+                Expr.Call (paramsExpr, typeof<NpgsqlParameterCollection>.GetMethod (nameof Unchecked.defaultof<NpgsqlParameterCollection>.Add, [| typeof<NpgsqlParameter> |]), [ newParam ])
+            )
+            |> QuotationsFactory.Sequentials continuation
 
         let invokeCode (exprArgs: Expr list) =
             let method =
@@ -130,8 +158,8 @@ type internal QuotationsFactory () =
                     exprArgs.[0],
                     Expr.Let (
                         paramsVar,
-                        Expr.PropertyGet (Expr.PropertyGet (Expr.Var var, providedCommandType.GetProperty "NpgsqlCommand"), typeof<NpgsqlCommand>.GetProperty ((nameof Unchecked.defaultof<NpgsqlCommand>.Parameters), typeof<NpgsqlParameterCollection>)),
-                        addParam (Expr.Var paramsVar) (List.zip sqlParameters exprArgs.Tail) rawMode (Expr.Call (Expr.Var var, method, []))
+                        Expr.PropertyGet (Expr.PropertyGet (Expr.Var var, providedCommandType.GetProperty "NpgsqlCommand"), typeof<NpgsqlCommand>.GetProperty (nameof Unchecked.defaultof<NpgsqlCommand>.Parameters, typeof<NpgsqlParameterCollection>)),
+                        addParams (Expr.Var paramsVar) (List.zip sqlParameters exprArgs.Tail) (Expr.Call (Expr.Var var, method, []))
                     )
                 )
             else
