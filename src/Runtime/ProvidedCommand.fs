@@ -58,10 +58,6 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
                 cfgCache.[commandNameHash] <- cfg
                 cfg)
 
-    static let getReaderBehavior (closeConnection, cfg) = 
-        if cfg.ResultType = ResultType.DataTable then CommandBehavior.KeyInfo else CommandBehavior.Default
-        ||| if closeConnection then CommandBehavior.CloseConnection else CommandBehavior.Default
-
     member val NpgsqlCommand = _cmd
 
     interface IDisposable with
@@ -76,7 +72,11 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
         if cfg.Prepare then
             do! x.NpgsqlCommand.PrepareAsync ()
 
-        let! cursor = x.NpgsqlCommand.ExecuteReaderAsync (getReaderBehavior (openHere, cfg))
+        let behavior =
+            if cfg.ResultType = ResultType.DataTable then CommandBehavior.KeyInfo else CommandBehavior.Default
+            ||| if openHere then CommandBehavior.CloseConnection else CommandBehavior.Default
+
+        let! cursor = x.NpgsqlCommand.ExecuteReaderAsync behavior
         return cursor :?> NpgsqlDataReader }
 
     static member internal LoadDataTable (cursor: NpgsqlDataReader) cmd (columns: DataColumn[]) =
@@ -131,7 +131,7 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
             let results = Array.zeroCreate x.NpgsqlCommand.Statements.Count
 
             // Command contains at least one query
-            if cfg.ResultSets |> Array.exists (fun (resultSet, _) -> Array.isEmpty resultSet.ExpectedColumns |> not) then
+            if cfg.ResultSets |> Array.exists (fun (resultSet, _) -> resultSet.ExpectedColumns.Length > 0) then
                 let mutable go = true
 
                 while go do
