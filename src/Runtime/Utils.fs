@@ -22,7 +22,7 @@ type Utils () =
                     Expression.Constant (null, typedefof<_ option>.MakeGenericType c.DataType),
                     Expression.New (typedefof<_ option>.MakeGenericType(c.DataType).GetConstructor [| c.DataType |], v))
             else
-                v
+                Expression.Convert (v, typeof<obj>)
 
         let rec constituentTuple (t: Type) (columns: (int * DataColumn)[]) param startIndex: Expression =
             let genericArgs = t.GetGenericArguments ()

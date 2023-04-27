@@ -321,6 +321,11 @@ let allParametersOptional() =
     Assert.Equal(Some( Some "Empty"), cmd().TaskAsyncExecute().Result) 
 
 [<Fact>]
+let selectSingleRowSingleColumnNonNullable() =
+    use cmd = DvdRental.CreateCommand<"select film_id from film where film_id = 1", SingleRow = true>(connectionString)
+    Assert.Equal(Some 1, cmd.TaskAsyncExecute().Result) 
+
+[<Fact>]
 let tableInsert() =
     
     let rental_id = 2
