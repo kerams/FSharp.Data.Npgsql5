@@ -80,7 +80,6 @@ let private builtins = [
     "cid", typeof<UInt32>
     "oidvector", typeof<UInt32[]>
     "name", typeof<string>
-    "char", typeof<string>
     
     "regtype", typeof<UInt32>
     "regclass", typeof<UInt32>

@@ -111,7 +111,24 @@ type internal QuotationsFactory () =
             let paramType = typedefof<NpgsqlParameter<_>>.MakeGenericType [| param.DataType.ClrType |]
             let newParam = Expr.NewObject (paramType.GetConstructor [| typeof<string>; param.DataType.ClrType |], [ Expr.Value (if rawMode then null else param.Name); paramExpr ])
 
-            if param.Precision <> 0uy || param.Scale <> 0uy then
+            let requiresExplicitType =
+                match param.NpgsqlDbType with
+                | NpgsqlTypes.NpgsqlDbType.Oid
+                | NpgsqlTypes.NpgsqlDbType.Oidvector
+                | NpgsqlTypes.NpgsqlDbType.Xid
+                | NpgsqlTypes.NpgsqlDbType.Cid
+                | NpgsqlTypes.NpgsqlDbType.Bit
+                | NpgsqlTypes.NpgsqlDbType.Money
+                | NpgsqlTypes.NpgsqlDbType.Char
+                | NpgsqlTypes.NpgsqlDbType.InternalChar
+                | NpgsqlTypes.NpgsqlDbType.Name
+                | NpgsqlTypes.NpgsqlDbType.Citext
+                | NpgsqlTypes.NpgsqlDbType.Xml
+                | NpgsqlTypes.NpgsqlDbType.Json
+                | NpgsqlTypes.NpgsqlDbType.Jsonb -> true
+                | _ -> false
+
+            if param.Precision <> 0uy || param.Scale <> 0uy || requiresExplicitType then
                 let paramVar = Var ("p", paramType)
                 let paramVarExpr = Expr.Var paramVar
 
@@ -124,6 +141,9 @@ type internal QuotationsFactory () =
 
                         if param.Scale <> 0uy then
                             Expr.PropertySet (paramVarExpr, paramType.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.Scale), Expr.Value param.Scale)
+
+                        if requiresExplicitType then
+                            Expr.PropertySet (paramVarExpr, paramType.GetProperty (nameof Unchecked.defaultof<NpgsqlParameter>.NpgsqlDbType), Expr.Value param.NpgsqlDbType)
                     ]
                     |> QuotationsFactory.Sequentials paramVarExpr
                 )
