@@ -124,22 +124,21 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
                 ResizeArrayToList xs |> box
             | _ ->
                 box xs })
-            
+
     member x.ExecuteMultiStatement () =
         backgroundTask {
             use! cursor = x.GetDataReader ()
             let results = Array.zeroCreate x.NpgsqlCommand.Statements.Count
 
             // Command contains at least one query
-            if cfg.ResultSets |> Array.exists (fun (resultSet, _) -> resultSet.ExpectedColumns.Length > 0) then
-                let mutable go = true
+            let mutable go = cfg.ResultSets |> Array.exists (fun (resultSet, _) -> resultSet.ExpectedColumns.Length > 0)
 
-                while go do
-                    let currentStatement = GetStatementIndex.Invoke cursor
-                    let! res = (snd cfg.ResultSets.[currentStatement]).Invoke cursor
-                    results.[currentStatement] <- res
-                    let! more = cursor.NextResultAsync ()
-                    go <- more
+            while go do
+                let currentStatement = GetStatementIndex.Invoke cursor
+                let! res = (snd cfg.ResultSets.[currentStatement]).Invoke cursor
+                results.[currentStatement] <- res
+                let! more = cursor.NextResultAsync ()
+                go <- more
 
             ProvidedCommand.SetNumberOfAffectedRows (results, x.NpgsqlCommand.Statements)
             return results
