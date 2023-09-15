@@ -181,16 +181,10 @@ type Utils () =
         backgroundTask {
             let results = ResizeArray<'TItem> ()
             
-            let! go = cursor.ReadAsync ()
-            let mutable go = go
-
-            while go do
+            while! cursor.ReadAsync () do
                 rowReader.Invoke cursor
                 |> unbox
                 |> results.Add
-
-                let! cont = cursor.ReadAsync ()
-                go <- cont
 
             return results
         }

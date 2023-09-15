@@ -86,7 +86,7 @@ let private builtins = [
     //"range", typeof<NpgsqlRange>, NpgsqlDbType.Range)
 ]
 
-let mutable private spatialTypesMapping = [
+let private spatialTypesMapping = [
     "geometry", typeof<NetTopologySuite.Geometries.Geometry>
     "geography", typeof<NetTopologySuite.Geometries.Geometry>
 ]
