@@ -598,7 +598,7 @@ let ``column "p1_00" does not exist``() =
             film_id = id, 
             title = title, 
             description = Some "Some description", 
-            release_year = Some 2018, 
+            release_year = None, 
             language_id = 1s, 
             rental_duration = Some 6s, 
             rental_rate = Some 0.9M, 
@@ -896,7 +896,7 @@ let ``Record rows contain different values``() =
 [<Fact>]
 let ``Interval update works``() =
     let entryId = Guid.NewGuid()
-    use insertCommand = DvdRental.CreateCommand<"INSERT INTO public.logs (id, log_time, some_data, modified) VALUES (@id, now(), '{2}','22 hours')">(connectionString)
+    use insertCommand = DvdRental.CreateCommand<"INSERT INTO public.logs (id, log_time, some_data, modified) VALUES (@id, '2022-2-2', '{2}','22 hours')">(connectionString)
     insertCommand.TaskAsyncExecute(entryId).Wait ()
 
 

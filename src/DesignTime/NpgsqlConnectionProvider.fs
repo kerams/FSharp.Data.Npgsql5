@@ -70,7 +70,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                 let sqlStatement =
                     if rawMode then
                         // Long parameters first to fix cases where one parameter is a substring of another - `select @prefix, @prefixLong`
-                        (parameters |> List.sortByDescending _.Name |> List.indexed |> List.fold (fun (currS: string) (i, param) -> currS.Replace("@" + param.Name, "$" + (i + 1).ToString())) sqlStatement).Trim ()
+                        (List.indexed parameters |> List.sortByDescending (fun (_, p) -> p.Name) |> List.fold (fun (currS: string) (i, param) -> currS.Replace("@" + param.Name, "$" + (i + 1).ToString())) sqlStatement).Trim ()
                     else
                         sqlStatement.Trim ()
 
