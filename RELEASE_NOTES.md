@@ -1,4 +1,4 @@
-### 3.0.0-alpha-2 - April 23rd, 2023
+### 3.0.0-alpha-5 - April 23rd, 2023
 - Allow the use of Npgsql 8
 - Remove Ply dependency
 - Remove synchronous and `async` commands - only tasks are supported

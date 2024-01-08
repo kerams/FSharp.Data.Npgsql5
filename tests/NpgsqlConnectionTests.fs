@@ -480,7 +480,7 @@ let asyncUpdateTable() =
                 public.actor
             WHERE 
                 first_name = @firstName 
-                AND last_name = @last_name
+                AND last_name = @firstNameNotReally
         ", ResultType.DataTable, XCtor = true>(conn, tx)
     let (firstName, lastName) as name = "Tom", "Hanks"
     let actors = cmd.TaskAsyncExecute(name).Result
