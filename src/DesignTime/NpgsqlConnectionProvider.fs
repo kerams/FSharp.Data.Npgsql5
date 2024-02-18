@@ -96,7 +96,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                             Expr.Lambda (
                                 Var ("x", typeof<unit>),
                                 Expr.Call (typeof<DesignTimeConfigSingleStatement>.GetMethod (nameof DesignTimeConfigSingleStatement.Create, BindingFlags.Static ||| BindingFlags.Public), [
-                                    Expr.Value $"""{if collectionType = CollectionType.LazySeq then "1" else "0"}|{int resultType}"""
+                                    Expr.Value $"""{if collectionType = CollectionType.LazySeq then "1" else "0"}|{int resultType}|{if prepare then "1" else "0"}"""
                                     Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr true))
                                 ]))
 
@@ -112,7 +112,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                             Expr.Lambda (
                                 Var ("x", typeof<unit>),
                                 Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
-                                    Expr.Value $"""{int resultType}|{int collectionType}|{if singleRow then "1" else "0"}"""
+                                    Expr.Value $"""{int resultType}|{int collectionType}|{if prepare then "1" else "0"}|{if singleRow then "1" else "0"}"""
                                     QuotationsFactory.BuildDataColumnsExpr (statements, resultType <> ResultType.DataTable)
                                 ]))
 
