@@ -1,7 +1,8 @@
-### 3.0.0-alpha-5 - April 23rd, 2023
+### 3.0.0-alpha-7 - February 18th, 2024
 - Allow the use of Npgsql 8
 - Remove Ply dependency
 - Remove synchronous and `async` commands - only tasks are supported
+- Remove the `ReuseProvidedTypes` static parameter - all provided record types are reused by default
 - Run-time optimizations
   - Use background tasks
   - Refactor internal locking and caching

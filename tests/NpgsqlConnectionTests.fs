@@ -70,8 +70,6 @@ let openConnection() =
 
 type DvdRental = NpgsqlConnection<connectionString>
 
-type DvdRentalWithTypeReuse = NpgsqlConnection<connectionString, ReuseProvidedTypes = true>
-
 [<Fact>]
 let selectLiterals() =
     use cmd =
@@ -710,7 +708,7 @@ let ``Two selects record2``() =
 
 [<Fact>]
 let ``Two selects record3``() =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"select actor_id as id, first_name as name, @arr::integer[] from actor where actor_id % @mod = 0 and @f::boolean order by id limit 5; select title as name, film_id as id, @arr::integer[] from film where @f::boolean and film_id % @mod = 0 order by id limit 5">(connectionString)
+    use cmd = DvdRental.CreateCommand<"select actor_id as id, first_name as name, @arr::integer[] from actor where actor_id % @mod = 0 and @f::boolean order by id limit 5; select title as name, film_id as id, @arr::integer[] from film where @f::boolean and film_id % @mod = 0 order by id limit 5">(connectionString)
     let arr = [| 9; 6 |]
     let actual = cmd.TaskAsyncExecute(arr, 2, true).Result
     Assert.Equal ("Nick", actual.ResultSet1.[0].name)
@@ -849,9 +847,9 @@ let ``Begin/end are ignored and don't generate a result set``() =
     Assert.Equal (0, actual.ResultSet3.Length)
 
 // Necessary to be able to refer to the reused type in the function below
-let _ = DvdRentalWithTypeReuse.CreateCommand<"select film_id, rating from film", SingleRow = true>
+let _ = DvdRental.CreateCommand<"select film_id, rating from film", SingleRow = true>
 
-type FilmIdRating = DvdRentalWithTypeReuse.``film_id:Int32, rating:Option<public.mpaa_rating>``
+type FilmIdRating = DvdRental.``film_id:Int32, rating:Option<public.mpaa_rating>``
 
 let assertEqualFilmIdRating (x: FilmIdRating) (y: FilmIdRating) =
     Assert.Equal (x.film_id, y.film_id)
@@ -859,8 +857,8 @@ let assertEqualFilmIdRating (x: FilmIdRating) (y: FilmIdRating) =
 
 [<Fact>]
 let ``Record type reused regardless of column order``() =
-    use cmd1 = DvdRentalWithTypeReuse.CreateCommand<"select film_id, rating from film limit 1", SingleRow = true>(connectionString)
-    use cmd2 = DvdRentalWithTypeReuse.CreateCommand<"select rating, film_id from film limit 1", SingleRow = true>(connectionString)
+    use cmd1 = DvdRental.CreateCommand<"select film_id, rating from film limit 1", SingleRow = true>(connectionString)
+    use cmd2 = DvdRental.CreateCommand<"select rating, film_id from film limit 1", SingleRow = true>(connectionString)
     let actual1 = cmd1.TaskAsyncExecute().Result.Value
     let actual2 = cmd2.TaskAsyncExecute().Result.Value
 
@@ -868,7 +866,7 @@ let ``Record type reused regardless of column order``() =
 
 [<Fact>]
 let ``Record type reused within a single command with multiple statements``() =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"select rating, film_id from film limit 1; select film_id, rating from film limit 1">(connectionString)
+    use cmd = DvdRental.CreateCommand<"select rating, film_id from film limit 1; select film_id, rating from film limit 1">(connectionString)
     let res = cmd.TaskAsyncExecute().Result
     let actual1 = res.ResultSet1.Head
     let actual2 = res.ResultSet2.Head
@@ -877,18 +875,18 @@ let ``Record type reused within a single command with multiple statements``() =
 
 [<Fact>]
 let ``Bytea is properly encoded in reused type name``() =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT staff_id, picture FROM public.staff WHERE staff_id = 1", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT staff_id, picture FROM public.staff WHERE staff_id = 1", SingleRow = true>(connectionString)
     let actual = cmd.TaskAsyncExecute().Result.Value
     let expected = [|137uy; 80uy; 78uy; 71uy; 13uy; 10uy; 90uy; 10uy|]
 
-    let assertByteaEqual (actual: DvdRentalWithTypeReuse.``picture:Option<Byte[]>, staff_id:Int32``) =
+    let assertByteaEqual (actual: DvdRental.``picture:Option<Byte[]>, staff_id:Int32``) =
         Assert.Equal<byte> (expected, actual.picture.Value)
 
     assertByteaEqual actual
 
 [<Fact>]
 let ``Record rows contain different values``() =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT staff_id, picture FROM public.staff">(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT staff_id, picture FROM public.staff">(connectionString)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.NotEqual (actual.[0].staff_id, actual.[1].staff_id)
@@ -931,14 +929,14 @@ let ``Insert does skip computed columns``() =
 
 [<Fact>]
 let ``Array collection type with records works`` () =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array>(connectionString)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, Array.length actual)
 
 [<Fact>]
 let ``Array collection type with records and multiple result sets works`` () =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film limit 5; select * from actor limit 6", CollectionType = CollectionType.Array>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5; select * from actor limit 6", CollectionType = CollectionType.Array>(connectionString)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, Array.length actual.ResultSet1)
@@ -946,38 +944,38 @@ let ``Array collection type with records and multiple result sets works`` () =
 
 [<Fact>]
 let ``Array collection type with tuples works`` () =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array, ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array, ResultType = ResultType.Tuples>(connectionString)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, Array.length actual)
 
 [<Fact>]
 let ``ResizeArray collection type with records works`` () =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.ResizeArray>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.ResizeArray>(connectionString)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.Count)
 
 [<Fact>]
 let ``ResizeArray collection type with tuples works`` () =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.ResizeArray, ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.ResizeArray, ResultType = ResultType.Tuples>(connectionString)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.Count)
 
 [<Fact>]
 let ``LazySeq works`` () =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(connectionString)
     use actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.Seq |> Seq.take 5 |> Seq.length)
 
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT film_id, rating from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT film_id, rating from film", CollectionType = CollectionType.LazySeq>(connectionString)
     use actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.Seq |> Seq.take 5 |> Seq.length)
 
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT null::integer blah from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT null::integer blah from film", CollectionType = CollectionType.LazySeq>(connectionString)
     use actual = cmd.TaskAsyncExecute().Result
 
     actual.Seq
@@ -986,7 +984,7 @@ let ``LazySeq works`` () =
 
 [<Fact>]
 let ``Disposing of the command does not dispose of the underlying Npgsql objects and LazySeq still works`` () =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(connectionString)
     use actual = cmd.TaskAsyncExecute().Result
     (cmd :> IDisposable).Dispose ()
 
@@ -994,7 +992,7 @@ let ``Disposing of the command does not dispose of the underlying Npgsql objects
 
 [<Fact>]
 let ``Disposing of the LazySeq causes further enumerations to fail`` () =
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(connectionString)
     use actual = cmd.TaskAsyncExecute().Result
     (actual :> IDisposable).Dispose ()
 
@@ -1003,7 +1001,7 @@ let ``Disposing of the LazySeq causes further enumerations to fail`` () =
 [<Fact>]
 let ``Disposing of the LazySeq disposes of the reader, but the provided connection stays open`` () =
     use conn = openConnection()
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq, XCtor = true>(conn)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq, XCtor = true>(conn)
     use actual = cmd.TaskAsyncExecute().Result
     (actual :> IDisposable).Dispose ()
 
@@ -1013,7 +1011,7 @@ let ``Disposing of the LazySeq disposes of the reader, but the provided connecti
 [<Fact>]
 let ``Disposing of the command does not close the connection in case of xctor`` () =
     use conn = openConnection()
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"SELECT * from film limit 1", XCtor = true>(conn)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 1", XCtor = true>(conn)
     let _ = cmd.TaskAsyncExecute().Result
     (cmd :> IDisposable).Dispose ()
 
@@ -1031,7 +1029,7 @@ let ``Manually mapped and cast composite type works`` () =
 [<Fact>]
 let ``NetTopology.Geometry roundtrip works`` () =
     let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"select @p::geometry">(connectionString)
+    use cmd = DvdRental.CreateCommand<"select @p::geometry">(connectionString)
     let res = cmd.TaskAsyncExecute(input).Result.Head.Value
     
     Assert.Equal (input.Coordinate.X, res.Coordinate.X)
@@ -1039,7 +1037,7 @@ let ``NetTopology.Geometry roundtrip works`` () =
 [<Fact>]
 let ``NetTopology.Geometry roundtrip works record`` () =
     let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg">(connectionString)
+    use cmd = DvdRental.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg">(connectionString)
     let res = cmd.TaskAsyncExecute(input).Result.Head.g.Value
     
     Assert.Equal (input.Coordinate.X, res.Coordinate.X)
@@ -1047,7 +1045,7 @@ let ``NetTopology.Geometry roundtrip works record`` () =
 [<Fact>]
 let ``NetTopology.Geometry roundtrip works record single row`` () =
     let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg", SingleRow = true>(connectionString)
     let res = cmd.TaskAsyncExecute(input).Result.Value
     
     Assert.Equal (input.Coordinate.X, res.g.Value.Coordinate.X)
@@ -1056,7 +1054,7 @@ let ``NetTopology.Geometry roundtrip works record single row`` () =
 [<Fact>]
 let ``NetTopology.Geometry roundtrip works tuple`` () =
     let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
-    use cmd = DvdRentalWithTypeReuse.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg", ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg", ResultType = ResultType.Tuples>(connectionString)
     let res, _, _ = cmd.TaskAsyncExecute(input).Result.Head
     
     Assert.Equal (input.Coordinate.X, res.Value.Coordinate.X)

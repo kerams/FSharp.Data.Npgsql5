@@ -22,10 +22,6 @@ type internal Statement = {
     Sql: string
 }
 
-type internal ProvidedTypeReuse =
-    | WithCache of ConcurrentDictionary<string, ProvidedTypeDefinition>
-    | NoReuse
-
 type internal QuotationsFactory () = 
     static let (|Arg3|) xs = 
         assert (List.length xs = 3)
@@ -187,7 +183,7 @@ type internal QuotationsFactory () =
 
         ProvidedMethod("TaskAsyncExecute", executeArgs, providedOutputType, invokeCode)
 
-    static member GetRecordType (rootTypeName, columns: Column list, customTypes: Map<string, ProvidedTypeDefinition>, typeNameSuffix, providedTypeReuse) =
+    static member GetRecordType (rootTypeName, columns: Column list, customTypes: Map<string, ProvidedTypeDefinition>, typeNameSuffix, providedTypeCache: ConcurrentDictionary<string, ProvidedTypeDefinition>) =
         columns 
         |> List.groupBy (fun x -> x.Name)
         |> List.iter (fun (name, xs) ->
@@ -221,15 +217,11 @@ type internal QuotationsFactory () =
 
             recordType
 
-        match providedTypeReuse with
-        | WithCache cache ->
-            let typeName = columns |> List.map (fun x ->
-                let t = if Map.containsKey x.DataType.FullName customTypes then x.DataType.FullName else x.ClrType.Name
-                if x.Nullable then sprintf "%s:Option<%s>" x.Name t else sprintf "%s:%s" x.Name t) |> List.sort |> String.concat ", "
+        let typeName = columns |> List.map (fun x ->
+            let t = if Map.containsKey x.DataType.FullName customTypes then x.DataType.FullName else x.ClrType.Name
+            if x.Nullable then sprintf "%s:Option<%s>" x.Name t else sprintf "%s:%s" x.Name t) |> List.sort |> String.concat ", "
 
-            cache.GetOrAdd (rootTypeName + typeName, fun _ -> createType typeName)
-        | NoReuse ->
-            createType ("Record" + typeNameSuffix)
+        providedTypeCache.GetOrAdd (rootTypeName + typeName, fun _ -> createType typeName)
 
     static member GetDataRowPropertyGetterAndSetterCode (column: Column) =
         let name = column.Name

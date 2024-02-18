@@ -16,7 +16,7 @@ let typeCache = ConcurrentDictionary<string, ProvidedTypeDefinition> ()
 let schemaCache = ConcurrentDictionary<string, DbSchemaLookups> ()
 
 let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, commands: ProvidedTypeDefinition, customTypes: Map<string, ProvidedTypeDefinition>,
-                           dbSchemaLookups: DbSchemaLookups, globalXCtor, globalPrepare: bool, providedTypeReuse, globalCollectionType: CollectionType) = 
+                           dbSchemaLookups: DbSchemaLookups, globalXCtor, globalPrepare: bool, providedTypeCache, globalCollectionType: CollectionType) = 
         
     let staticParams = 
         [
@@ -60,7 +60,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                             collectionType,
                             singleRow,
                             (if statements.Length > 1 then (i + 1).ToString () else ""),
-                            providedTypeReuse))
+                            providedTypeCache))
 
                 let commandTypeName =
                     if typename <> "" then
@@ -90,13 +90,13 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                         commands.AddMember cmdProvidedType
 
                         QuotationsFactory.AddTopLevelTypes cmdProvidedType typeof<ProvidedCommandSingleStatement> parameters singleRow resultType collectionType customTypes statements
-                            (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType) rawMode
+                            (if resultType <> ResultType.Records then cmdProvidedType else rootType) rawMode
 
                         let designTimeConfig = 
                             Expr.Lambda (
                                 Var ("x", typeof<unit>),
                                 Expr.Call (typeof<DesignTimeConfigSingleStatement>.GetMethod (nameof DesignTimeConfigSingleStatement.Create, BindingFlags.Static ||| BindingFlags.Public), [
-                                    Expr.Value $"""{if collectionType = CollectionType.LazySeq then "1" else "0"}|{int resultType}|{if prepare then "1" else "0"}"""
+                                    Expr.Value $"""{if collectionType = CollectionType.LazySeq then "1" else "0"}|{int resultType}"""
                                     Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr true))
                                 ]))
 
@@ -106,13 +106,13 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                         commands.AddMember cmdProvidedType
 
                         QuotationsFactory.AddTopLevelTypes cmdProvidedType typeof<ProvidedCommand> parameters singleRow resultType collectionType customTypes statements
-                            (if resultType <> ResultType.Records || providedTypeReuse = NoReuse then cmdProvidedType else rootType) rawMode
+                            (if resultType <> ResultType.Records then cmdProvidedType else rootType) rawMode
 
                         let designTimeConfig = 
                             Expr.Lambda (
                                 Var ("x", typeof<unit>),
                                 Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
-                                    Expr.Value $"""{int resultType}|{int collectionType}|{if prepare then "1" else "0"}|{if singleRow then "1" else "0"}"""
+                                    Expr.Value $"""{int resultType}|{int collectionType}|{if singleRow then "1" else "0"}"""
                                     QuotationsFactory.BuildDataColumnsExpr (statements, resultType <> ResultType.DataTable)
                                 ]))
 
@@ -190,7 +190,7 @@ let createTableTypes(customTypes : Map<string, ProvidedTypeDefinition>, item: Db
 
     tables
 
-let createRootType (assembly, nameSpace: string, typeName, connectionString, xctor, prepare, reuseProvidedTypes, collectionType) =
+let createRootType (assembly, nameSpace: string, typeName, connectionString, xctor, prepare, collectionType) =
     if String.IsNullOrWhiteSpace connectionString then invalidArg "Connection" "Value is empty!" 
         
     let databaseRootType = ProvidedTypeDefinition (assembly, nameSpace, typeName, baseType = Some typeof<obj>, hideObjectMethods = true)
@@ -220,8 +220,7 @@ let createRootType (assembly, nameSpace: string, typeName, connectionString, xct
 
     let commands = ProvidedTypeDefinition("Commands", None)
     databaseRootType.AddMember commands
-    let providedTypeReuse = if reuseProvidedTypes then WithCache typeCache else NoReuse
-    addCreateCommandMethod (connectionString, databaseRootType, commands, customTypes, schemaLookups, xctor, prepare, providedTypeReuse, collectionType)
+    addCreateCommandMethod (connectionString, databaseRootType, commands, customTypes, schemaLookups, xctor, prepare, typeCache, collectionType)
 
     databaseRootType
 
@@ -234,10 +233,9 @@ let internal getProviderType (assembly, nameSpace) =
             ProvidedStaticParameter("ConnectionString", typeof<string>) 
             ProvidedStaticParameter("XCtor", typeof<bool>, false) 
             ProvidedStaticParameter("Prepare", typeof<bool>, false)
-            ProvidedStaticParameter("ReuseProvidedTypes", typeof<bool>, false) 
             ProvidedStaticParameter("CollectionType", typeof<CollectionType>, CollectionType.List)
         ],
-        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4])))
+        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3])))
 
     providerType.AddXmlDoc """
 <summary>Typed access to PostgreSQL programmable objects, tables and functions.</summary> 
