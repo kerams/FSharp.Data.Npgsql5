@@ -9,7 +9,6 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>FS0044</NoWarn>
     <LangVersion>preview</LangVersion>
     <DefineConstants>NO_GENERATIVE</DefineConstants>
@@ -31,6 +30,11 @@
     <Compile Include="NpgsqlConnectionProvider.fs" />
     <Compile Include="TypeProviderAssembly.fs" />
     <Content Include="paket.references" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="FSharp.Compiler.Service">
+      <HintPath>..\..\..\fsharp\artifacts\bin\FSharp.Compiler.Service\Debug\netstandard2.0\FSharp.Compiler.Service.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>
