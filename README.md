@@ -1,13 +1,13 @@
 ## Description
 FSharp.Data.Npgsql5 is an F# type provider library built on top of [Npgsql ADO.NET client library]( http://www.npgsql.org/doc/index.html).
 
-Forked from https://github.com/demetrixbio/FSharp.Data.Npgsql, ported to Npgsql 5+ with a bunch of improvements and some breaking changes. Credits to original authors and contributors.
+Forked from https://github.com/demetrixbio/FSharp.Data.Npgsql, ported to Npgsql 6+ with a bunch of improvements and some breaking changes. Credits to original authors and contributors.
 
 ## Nuget package
 FSharp.Data.Npgsql5 [![Nuget](https://img.shields.io/nuget/v/FSharp.Data.Npgsql5.svg?colorB=green)](https://www.nuget.org/packages/FSharp.Data.Npgsql5)
  
 ## Setup
-All examples are based on the [DVD rental sample database](http://www.postgresqltutorial.com/download/dvd-rental-sample-database/) and assume the following definitions exist:
+All examples are based on the [DVD rental sample database](https://www.postgresqltutorial.com/postgresql-getting-started/postgresql-sample-database/) and assume the following definitions exist:
 ```fsharp
 [<Literal>]
 let dvdRental = "Host=localhost;Username=postgres;Database=dvdrental"
@@ -91,8 +91,8 @@ let doStuff () =
 
 ## Reuse of provided records
 
-By default, every `CreateCommand` generates a completely seperate type when using `ResultType.Record`. This can be annoying when you have similar queries that return the same data structurally and you cannot, for instance, use one function to map the results onto your domain model.
-`NpgsqlConnection` exposes the static parameter `ReuseProvidedTypes` to alleviate this issue. When set to true, all commands that return the same columns (**column names and types must match exactly**, while select order does not matter) end up sharing the same provided record type too.
+By default in **v2**, every `CreateCommand` generates a completely seperate type when using `ResultType.Record`. This can be annoying when you have similar queries that return the same data structurally and you cannot, for instance, use one function to map the results onto your domain model.
+`NpgsqlConnection` exposes the static parameter `ReuseProvidedTypes` to alleviate this issue. When set to true, all commands that return the same columns (**column names and types must match exactly**, while select order does not matter) end up sharing the same provided record type too. Starting from **v3**, provided types are always reused.
 The following snippet illustrates how you could reuse a single function to map the result of 2 distinct queries onto the `Film` type:
 
 ```fsharp
@@ -163,12 +163,12 @@ type DvdRental = NpgsqlConnection<dvdRental, Prepare = true>
 // Will be prepared
 use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3">(dvdRental)
 for x in cmd.TaskAsyncExecute().Result do   
-printfn "Movie '%s' released in %i." x.title x.release_year.Value
+    printfn "Movie '%s' released in %i." x.title x.release_year.Value
 
 // Overrides the DvdRental setting and thus won't be prepared
 use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3", Prepare = false>(dvdRental)
 for x in cmd.TaskAsyncExecute().Result do   
-printfn "Movie '%s' released in %i." x.title x.release_year.Value
+    printfn "Movie '%s' released in %i." x.title x.release_year.Value
 ```
 
 ## Data modifications
