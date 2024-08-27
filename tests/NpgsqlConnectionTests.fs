@@ -71,6 +71,13 @@ let openConnection() =
 type DvdRental = NpgsqlConnection<connectionString>
 
 [<Fact>]
+let ``Multi-statement command with SingleRow, no result`` () =
+    use cmd = DvdRental.CreateCommand<"update actor set first_name = first_name; select id from logs where false", SingleRow = true>(connectionString)
+    let res = cmd.TaskAsyncExecute().Result
+    Assert.Equal (200, res.RowsAffected1)
+    Assert.Equal (None, res.ResultSet2)
+
+[<Fact>]
 let selectLiterals() =
     use cmd =
         DvdRental.CreateCommand<"        

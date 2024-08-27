@@ -133,21 +133,22 @@ type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig
             // Command contains at least one query
             let mutable go = cfg.ResultSets |> Array.exists (fun (resultSet, _) -> resultSet.ExpectedColumns.Length > 0)
 
-            while go do
-                let currentStatement = GetStatementIndex.Invoke cursor
-                let! res = (snd cfg.ResultSets.[currentStatement]).Invoke cursor
-                results.[currentStatement] <- res
-                let! more = cursor.NextResultAsync ()
-                go <- more
-
-            ProvidedCommand.SetNumberOfAffectedRows (results, x.NpgsqlCommand.Statements)
+            for i in 0 .. results.Length - 1 do
+                if go && i = GetStatementIndex.Invoke cursor then
+                    let! res = (snd cfg.ResultSets.[i]).Invoke cursor
+                    results.[i] <- res
+                    let! more = cursor.NextResultAsync ()
+                    go <- more
+                else
+                    results.[i] <- int x.NpgsqlCommand.Statements.[i].Rows
+                
             return results
         }
 
     static member private SetNumberOfAffectedRows (results: obj[], statements: System.Collections.Generic.IReadOnlyList<NpgsqlBatchCommand>) =
         for i in 0 .. statements.Count - 1 do
             if isNull results.[i] then
-                results.[i] <- int statements.[i].Rows |> box
+                results.[i] <- int statements.[i].Rows
 
 [<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
 type ProvidedCommandNonQuery (prepare: bool, _cmd: NpgsqlCommand) =

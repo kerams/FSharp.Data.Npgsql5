@@ -1,3 +1,5 @@
+- Fix a potential `InvalidCastException` in a multi-statement command in combination with `SingleRow = true`
+
 ### 3.0.0-alpha-7 - February 18th, 2024
 - Allow the use of Npgsql 8
 - Remove Ply dependency
