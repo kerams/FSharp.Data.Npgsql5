@@ -80,10 +80,8 @@ type Utils () =
         let mi = typeof<NpgsqlDataReader>.GetProperty("StatementIndex", Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetMethod
         Delegate.CreateDelegate (typeof<Func<NpgsqlDataReader, int>>, mi) :?> Func<NpgsqlDataReader, int>
 
-    static member NpgsqlCommand (cs, sql, timeout) =
-        let cmd = new NpgsqlCommand (sql, new NpgsqlConnection (cs))
-        cmd.CommandTimeout <- timeout
-        cmd
+    static member NpgsqlCommand (dataSource: NpgsqlDataSource, sql, timeout) =
+        dataSource.CreateCommand (sql, CommandTimeout = timeout)
 
     static member NpgsqlCommandXCtor (conn, tran, sql, timeout) =
         let cmd = new NpgsqlCommand (sql, conn)

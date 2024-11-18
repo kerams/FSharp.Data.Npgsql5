@@ -20,9 +20,6 @@ Npgsql.NpgsqlConnection.GlobalTypeMapper.MapComposite<SimpleComposite> "simple_t
 let isStatementPrepared (connection: Npgsql.NpgsqlConnection) =
     // npgsql 7
     let pool = typeof<Npgsql.NpgsqlConnection>.GetField("_dataSource", BindingFlags.NonPublic ||| BindingFlags.Instance).GetValue(connection)
-    
-    // npgsql 6
-    //let pool = typeof<Npgsql.NpgsqlConnection>.GetProperty("Pool", BindingFlags.NonPublic ||| BindingFlags.Instance).GetValue(connection)
 
     let connectors = pool.GetType().GetField("Connectors", BindingFlags.NonPublic ||| BindingFlags.Instance).GetValue(pool) :?> obj[]
 
@@ -63,16 +60,16 @@ let getActorByName = "
 [<Literal>]
 let connectionString = "Host=localhost;Username=postgres;Password=postgres;Database=dvdrental;Port=5432"
 
-let openConnection() = 
-    let conn = new Npgsql.NpgsqlConnection(connectionString)
-    conn.Open()
-    conn
+let ds = Npgsql.NpgsqlDataSource.Create connectionString
+
+let openConnection () = 
+    ds.OpenConnection ()
 
 type DvdRental = NpgsqlConnection<connectionString>
 
 [<Fact>]
 let ``Multi-statement command with SingleRow, no result`` () =
-    use cmd = DvdRental.CreateCommand<"update actor set first_name = first_name; select id from logs where false", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"update actor set first_name = first_name; select id from logs where false", SingleRow = true>(ds)
     let res = cmd.TaskAsyncExecute().Result
     Assert.Equal (200, res.RowsAffected1)
     Assert.Equal (None, res.ResultSet2)
@@ -82,7 +79,7 @@ let selectLiterals() =
     use cmd =
         DvdRental.CreateCommand<"        
             SELECT 42 AS Answer, current_date as today 
-        ">(connectionString)
+        ">(ds)
 
     let x = cmd.TaskAsyncExecute().Result |> Seq.exactlyOne
     Assert.Equal(Some 42, x.answer)
@@ -94,7 +91,7 @@ let selectSingleRow() =
     // CURRENT_TIME and CURRENT_TIMESTAMP deliver values with time zone
     use cmd = DvdRental.CreateCommand<"        
         SELECT 42 AS Answer, current_date as today
-    ", SingleRow = true>(connectionString)
+    ", SingleRow = true>(ds)
 
     Assert.Equal(
         Some( Some 42, Some DateTime.Now.Date), 
@@ -105,7 +102,7 @@ let selectSingleRow() =
 let selectSingleRow2ResultSets () =
     use cmd = DvdRental.CreateCommand<"
         select 42;
-        select 'nope'", SingleRow = true>(connectionString)
+        select 'nope'", SingleRow = true>(ds)
 
     let res = cmd.TaskAsyncExecute().Result
 
@@ -114,12 +111,12 @@ let selectSingleRow2ResultSets () =
 
 [<Fact>]
 let selectSingleNull() =
-    use cmd = DvdRental.CreateCommand<"SELECT NULL", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT NULL", SingleRow = true>(ds)
     Assert.Equal(Some None, cmd.TaskAsyncExecute().Result)
 
 [<Fact>]
 let selectSingleColumn() =
-    use cmd = DvdRental.CreateCommand<"SELECT * FROM generate_series(0, 10)">(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * FROM generate_series(0, 10)">(ds)
 
     Assert.Equal<_ seq>(
         { 0 .. 10 }, 
@@ -128,7 +125,7 @@ let selectSingleColumn() =
 
 [<Fact>]
 let ``selectSingleColumn tuple`` () =
-    use cmd = DvdRental.CreateCommand<"SELECT * FROM generate_series(0, 10)", ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * FROM generate_series(0, 10)", ResultType = ResultType.Tuples>(ds)
 
     Assert.Equal<_ seq>(
         { 0 .. 10 }, 
@@ -140,7 +137,7 @@ let paramInFilter() =
     use cmd = 
         DvdRental.CreateCommand<"
             SELECT * FROM generate_series(0, 10) AS xs(value) WHERE value % @div = 0
-        ">(connectionString)
+        ">(ds)
 
     Assert.Equal<_ seq>(
         { 0 .. 2 .. 10 }, 
@@ -152,7 +149,7 @@ let paramInLimit() =
     use cmd = 
         DvdRental.CreateCommand<"
             SELECT * FROM generate_series(0, 10) LIMIT @limit
-        ">(connectionString)
+        ">(ds)
 
     let limit = 5
     Assert.Equal<_ seq>(
@@ -171,7 +168,7 @@ let dateTableWithUpdate() =
     use cmd = 
         DvdRental.CreateCommand<"
             SELECT * FROM rental WHERE rental_id = @rental_id
-        ", ResultType.DataTable>(connectionString) 
+        ", ResultType.DataTable>(ds) 
         
     let t = cmd.TaskAsyncExecute(rental_id).Result
     Assert.Equal(1, t.Rows.Count)
@@ -181,17 +178,17 @@ let dateTableWithUpdate() =
     try
         let new_return_date = Some DateTime.Now.Date
         r.return_date <- new_return_date
-        rowsAffected <- t.Update(connectionString)
+        rowsAffected <- t.Update(ds)
         Assert.Equal(1, rowsAffected)
 
-        use cmd = DvdRental.CreateCommand<getRentalById>(connectionString)
+        use cmd = DvdRental.CreateCommand<getRentalById>(ds)
         Assert.Equal( new_return_date, cmd.TaskAsyncExecute( rental_id).Result |> Seq.exactlyOne ) 
 
     finally
         if rowsAffected = 1
         then 
             r.return_date <- return_date
-            t.Update(connectionString) |>  ignore      
+            t.Update(ds) |>  ignore      
             
 [<Fact>]
 let dateTableWithUpdateAndTx() =
@@ -222,7 +219,7 @@ let dateTableWithUpdateAndTx() =
 
     Assert.Equal(
         return_date, 
-        DvdRental.CreateCommand<getRentalById>(connectionString).TaskAsyncExecute( rental_id).Result |> Seq.exactlyOne
+        DvdRental.CreateCommand<getRentalById>(ds).TaskAsyncExecute( rental_id).Result |> Seq.exactlyOne
     ) 
 
 [<Fact>]
@@ -258,7 +255,7 @@ let dateTableWithUpdateWithConflictOptionCompareAllSearchableValues() =
 let deleteWithTx() =
     let rental_id = 2
 
-    let cmd () = DvdRental.CreateCommand<getRentalById>(connectionString)
+    let cmd () = DvdRental.CreateCommand<getRentalById>(ds)
     use cmd1 = cmd ()
     Assert.Equal(1, cmd1.TaskAsyncExecute( rental_id).Result |> Seq.length) 
 
@@ -279,14 +276,14 @@ let deleteWithTx() =
     
 [<Fact>]
 let ``Select from partitioned table``() =
-    use cmd = DvdRental.CreateCommand<selectFromPartitionedTable>(connectionString)
+    use cmd = DvdRental.CreateCommand<selectFromPartitionedTable>(ds)
     let actual = cmd.TaskAsyncExecute().Result
     Assert.Equal(2, actual.Length)
     Assert.Equal<int[]>([|1;2;3|], actual.Head.some_data)
 
 [<Fact>]
 let ``Select from specific partition``() =
-    use cmd = DvdRental.CreateCommand<selectFromSpecificPartition>(connectionString)
+    use cmd = DvdRental.CreateCommand<selectFromSpecificPartition>(ds)
     let actual = cmd.TaskAsyncExecute().Result
     Assert.Equal(2, actual.Length)
     Assert.Equal<int[]>([|1;2;3|], actual.Head.some_data)
@@ -302,7 +299,7 @@ let selectEnum() =
             SELECT * 
             FROM UNNEST( enum_range(NULL::mpaa_rating)) AS X 
             WHERE X <> @exclude;          
-        ">(connectionString)
+        ">(ds)
     Assert.Equal<_ list>(
         [ Rating.G; Rating.PG; Rating.R; Rating.``NC-17`` ],
         [ for x in cmd.TaskAsyncExecute(exclude = Rating.``PG-13``).Result -> x.Value ]
@@ -312,7 +309,7 @@ let selectEnum() =
 let selectEnumWithArray() =
     use cmd = DvdRental.CreateCommand<"
         SELECT COUNT(*)  FROM film WHERE ARRAY[rating] <@ @xs::text[]::mpaa_rating[];
-    ", SingleRow = true>(connectionString)
+    ", SingleRow = true>(ds)
 
     Assert.Equal( Some( Some 223L), cmd.TaskAsyncExecute([| "PG-13" |]).Result) 
 
@@ -321,13 +318,13 @@ let allParametersOptional() =
     let cmd () = 
         DvdRental.CreateCommand<"
             SELECT coalesce(@x, 'Empty') AS x
-        ", AllParametersOptional = true, SingleRow = true>(connectionString)
+        ", AllParametersOptional = true, SingleRow = true>(ds)
     Assert.Equal(Some( Some "test"), cmd().TaskAsyncExecute(Some "test").Result) 
     Assert.Equal(Some( Some "Empty"), cmd().TaskAsyncExecute().Result) 
 
 [<Fact>]
 let selectSingleRowSingleColumnNonNullable() =
-    use cmd = DvdRental.CreateCommand<"select film_id from film where film_id = 1", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"select film_id from film where film_id = 1", SingleRow = true>(ds)
     Assert.Equal(Some 1, cmd.TaskAsyncExecute().Result) 
 
 [<Fact>]
@@ -335,7 +332,7 @@ let tableInsert() =
     
     let rental_id = 2
     
-    let cmd () = DvdRental.CreateCommand<"SELECT * FROM rental WHERE rental_id = @rental_id", SingleRow = true>(connectionString)  
+    let cmd () = DvdRental.CreateCommand<"SELECT * FROM rental WHERE rental_id = @rental_id", SingleRow = true>(ds)  
     use cmd1 = cmd ()
     let x = cmd1.TaskAsyncExecute(rental_id).Result |> Option.get
         
@@ -373,7 +370,7 @@ let tableInsertViaAddRow() =
     
     let rental_id = 2
     
-    let cmd () = DvdRental.CreateCommand<"SELECT * FROM rental WHERE rental_id = @rental_id", SingleRow = true>(connectionString)
+    let cmd () = DvdRental.CreateCommand<"SELECT * FROM rental WHERE rental_id = @rental_id", SingleRow = true>(ds)
     use cmd1 = cmd ()
     let x = cmd1.TaskAsyncExecute(rental_id).Result |> Option.get
         
@@ -409,7 +406,7 @@ let tableInsertViaAddRow() =
   
 [<Fact>]
 let selectEnumWithArray2() =
-    use cmd = DvdRental.CreateCommand<"SELECT @ratings::mpaa_rating[];", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT @ratings::mpaa_rating[];", SingleRow = true>(ds)
 
     let ratings = [| 
         DvdRental.``public``.Types.mpaa_rating.``PG-13``
@@ -516,7 +513,7 @@ let binaryImport() =
         use cmd = DvdRental.CreateCommand<getActorByName, XCtor = true>(conn, tx)
         Assert.Equal(1, cmd.TaskAsyncExecute(firstName, lastName).Result |> Seq.length)
     do 
-        use cmd = DvdRental.CreateCommand<getActorByName>(connectionString)
+        use cmd = DvdRental.CreateCommand<getActorByName>(ds)
         Assert.Equal(0, cmd.TaskAsyncExecute(firstName, lastName).Result |> Seq.length)
 
 [<Fact>]
@@ -624,14 +621,14 @@ let ``column "p1_00" does not exist``() =
 
 [<Fact>]
 let selectBytea() =
-    use cmd = DvdRental.CreateCommand<"SELECT picture FROM public.staff WHERE staff_id = 1", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT picture FROM public.staff WHERE staff_id = 1", SingleRow = true>(ds)
     let actual = cmd.TaskAsyncExecute().Result.Value.Value
     let expected = [|137uy; 80uy; 78uy; 71uy; 13uy; 10uy; 90uy; 10uy|]
     Assert.Equal<byte>(expected, actual)
 
 [<Fact>]
 let ``Select from materialized view``() =
-    use cmd = DvdRental.CreateCommand<"select some_data, title from long_films limit 1", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"select some_data, title from long_films limit 1", SingleRow = true>(ds)
     let actual = cmd.TaskAsyncExecute().Result.Value
     Assert.Equal<int[]>([|1;2;3|], actual.some_data.Value)
     Assert.True(String.IsNullOrWhiteSpace actual.title.Value |> not)
@@ -698,14 +695,14 @@ let ``Tuples command prepared``() =
 
 [<Fact>]
 let ``Two selects record``() =
-    use cmd = DvdRental.CreateCommand<getActorsAndFilms>(connectionString)
+    use cmd = DvdRental.CreateCommand<getActorsAndFilms>(ds)
     let actual = cmd.TaskAsyncExecute().Result
     Assert.Equal (5, actual.ResultSet1 |> List.map (fun x -> x.first_name) |> List.length)
     Assert.Equal (5, actual.ResultSet2 |> List.map (fun x -> x.title) |> List.length)
     
 [<Fact>]
 let ``Two selects record2``() =
-    use cmd = DvdRental.CreateCommand<"select actor_id as id, first_name as name, @arr::integer[] from actor where actor_id % @mod = 0 and @f::boolean order by id limit 5; select title as name, film_id as id, @arr::integer[] from film where @f::boolean and film_id % @mod = 0 order by id limit 5">(connectionString)
+    use cmd = DvdRental.CreateCommand<"select actor_id as id, first_name as name, @arr::integer[] from actor where actor_id % @mod = 0 and @f::boolean order by id limit 5; select title as name, film_id as id, @arr::integer[] from film where @f::boolean and film_id % @mod = 0 order by id limit 5">(ds)
     let arr = [| 9; 6 |]
     let actual = cmd.TaskAsyncExecute(arr, 2, true).Result
     Assert.Equal ("Nick", actual.ResultSet1.[0].name)
@@ -715,7 +712,7 @@ let ``Two selects record2``() =
 
 [<Fact>]
 let ``Two selects record3``() =
-    use cmd = DvdRental.CreateCommand<"select actor_id as id, first_name as name, @arr::integer[] from actor where actor_id % @mod = 0 and @f::boolean order by id limit 5; select title as name, film_id as id, @arr::integer[] from film where @f::boolean and film_id % @mod = 0 order by id limit 5">(connectionString)
+    use cmd = DvdRental.CreateCommand<"select actor_id as id, first_name as name, @arr::integer[] from actor where actor_id % @mod = 0 and @f::boolean order by id limit 5; select title as name, film_id as id, @arr::integer[] from film where @f::boolean and film_id % @mod = 0 order by id limit 5">(ds)
     let arr = [| 9; 6 |]
     let actual = cmd.TaskAsyncExecute(arr, 2, true).Result
     Assert.Equal ("Nick", actual.ResultSet1.[0].name)
@@ -725,13 +722,13 @@ let ``Two selects record3``() =
 
 [<Fact>]
 let ``Queries against system catalogs work``() =
-    use cmd = DvdRental.CreateCommand<"SELECT * FROM pg_timezone_names">(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * FROM pg_timezone_names">(ds)
     let actual = cmd.TaskAsyncExecute().Result
     Assert.True(actual |> List.map (fun x -> x.name.Value) |> List.length > 0)    
 
 [<Fact>]
 let ``Two selects tuple``() =
-    use cmd = DvdRental.CreateCommand<getActorsAndFilms, ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<getActorsAndFilms, ResultType = ResultType.Tuples>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.ResultSet1 |> List.length)
@@ -739,7 +736,7 @@ let ``Two selects tuple``() =
 
 [<Fact>]
 let ``Two selects data table``() =
-    use cmd = DvdRental.CreateCommand<getActorsAndFilms, ResultType = ResultType.DataTable>(connectionString)
+    use cmd = DvdRental.CreateCommand<getActorsAndFilms, ResultType = ResultType.DataTable>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.ResultSet1.Rows |> Seq.map (fun x -> x.first_name) |> Seq.length)
@@ -747,7 +744,7 @@ let ``Two selects data table``() =
 
 [<Fact>]
 let ``Two selects data reader``() =
-    use cmd = DvdRental.CreateCommand<getActorsAndFilms, ResultType = ResultType.DataReader>(connectionString)
+    use cmd = DvdRental.CreateCommand<getActorsAndFilms, ResultType = ResultType.DataReader>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     let mutable resultSets = 1
@@ -759,7 +756,7 @@ let ``Two selects data reader``() =
 
 [<Fact>]
 let ``Two selects and nonquery record``() =
-    use cmd = DvdRental.CreateCommand<getActorsUpdateActorsGetFilms>(connectionString)
+    use cmd = DvdRental.CreateCommand<getActorsUpdateActorsGetFilms>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.ResultSet1 |> List.map (fun x -> x.first_name) |> List.length)
@@ -768,7 +765,7 @@ let ``Two selects and nonquery record``() =
 
 [<Fact>]
 let ``Two selects and nonquery tuple``() =
-    use cmd = DvdRental.CreateCommand<getActorsUpdateActorsGetFilms, ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<getActorsUpdateActorsGetFilms, ResultType = ResultType.Tuples>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.ResultSet1 |> List.length)
@@ -777,7 +774,7 @@ let ``Two selects and nonquery tuple``() =
 
 [<Fact>]
 let ``Two selects and nonquery data table``() =
-    use cmd = DvdRental.CreateCommand<getActorsUpdateActorsGetFilms, ResultType = ResultType.DataTable>(connectionString)
+    use cmd = DvdRental.CreateCommand<getActorsUpdateActorsGetFilms, ResultType = ResultType.DataTable>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.ResultSet1.Rows |> Seq.map (fun x -> x.first_name) |> Seq.length)
@@ -786,7 +783,7 @@ let ``Two selects and nonquery data table``() =
 
 [<Fact>]
 let ``Two selects and nonquery data reader``() =
-    use cmd = DvdRental.CreateCommand<getActorsUpdateActorsGetFilms, ResultType = ResultType.DataReader>(connectionString)
+    use cmd = DvdRental.CreateCommand<getActorsUpdateActorsGetFilms, ResultType = ResultType.DataReader>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     let mutable resultSets = 1
@@ -798,7 +795,7 @@ let ``Two selects and nonquery data reader``() =
 
 [<Fact>]
 let ``Four single-column selects``() =
-    use cmd = DvdRental.CreateCommand<fourSelects>(connectionString)
+    use cmd = DvdRental.CreateCommand<fourSelects>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (10, actual.ResultSet1 |> Seq.map (fun x -> x.Value) |> Seq.length)
@@ -808,7 +805,7 @@ let ``Four single-column selects``() =
 
 [<Fact>]
 let ``One select and two updates record``() =
-    use cmd = DvdRental.CreateCommand<updateActorsUpdateSelectActorsUpdateFilms>(connectionString)
+    use cmd = DvdRental.CreateCommand<updateActorsUpdateSelectActorsUpdateFilms>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (2, actual.RowsAffected1)
@@ -817,7 +814,7 @@ let ``One select and two updates record``() =
 
 [<Fact>]
 let ``One select and two updates tuple``() =
-    use cmd = DvdRental.CreateCommand<updateActorsUpdateSelectActorsUpdateFilms, ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<updateActorsUpdateSelectActorsUpdateFilms, ResultType = ResultType.Tuples>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (2, actual.RowsAffected1)
@@ -826,7 +823,7 @@ let ``One select and two updates tuple``() =
 
 [<Fact>]
 let ``One select and two updates data table``() =
-    use cmd = DvdRental.CreateCommand<updateActorsUpdateSelectActorsUpdateFilms, ResultType = ResultType.DataTable>(connectionString)
+    use cmd = DvdRental.CreateCommand<updateActorsUpdateSelectActorsUpdateFilms, ResultType = ResultType.DataTable>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (2, actual.RowsAffected1)
@@ -835,7 +832,7 @@ let ``One select and two updates data table``() =
 
 [<Fact>]
 let ``One select and two updates reader``() =
-    use cmd = DvdRental.CreateCommand<updateActorsUpdateSelectActorsUpdateFilms, ResultType = ResultType.DataReader>(connectionString)
+    use cmd = DvdRental.CreateCommand<updateActorsUpdateSelectActorsUpdateFilms, ResultType = ResultType.DataReader>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     let mutable resultSets = 1
@@ -847,7 +844,7 @@ let ``One select and two updates reader``() =
 
 [<Fact>]
 let ``Begin/end are ignored and don't generate a result set``() =
-    use cmd = DvdRental.CreateCommand<"begin   ; delete from film where film_id = -200;select * from film where film_id = -200;END">(connectionString)
+    use cmd = DvdRental.CreateCommand<"begin   ; delete from film where film_id = -200;select * from film where film_id = -200;END">(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (0, actual.RowsAffected2)
@@ -864,8 +861,8 @@ let assertEqualFilmIdRating (x: FilmIdRating) (y: FilmIdRating) =
 
 [<Fact>]
 let ``Record type reused regardless of column order``() =
-    use cmd1 = DvdRental.CreateCommand<"select film_id, rating from film limit 1", SingleRow = true>(connectionString)
-    use cmd2 = DvdRental.CreateCommand<"select rating, film_id from film limit 1", SingleRow = true>(connectionString)
+    use cmd1 = DvdRental.CreateCommand<"select film_id, rating from film limit 1", SingleRow = true>(ds)
+    use cmd2 = DvdRental.CreateCommand<"select rating, film_id from film limit 1", SingleRow = true>(ds)
     let actual1 = cmd1.TaskAsyncExecute().Result.Value
     let actual2 = cmd2.TaskAsyncExecute().Result.Value
 
@@ -873,7 +870,7 @@ let ``Record type reused regardless of column order``() =
 
 [<Fact>]
 let ``Record type reused within a single command with multiple statements``() =
-    use cmd = DvdRental.CreateCommand<"select rating, film_id from film limit 1; select film_id, rating from film limit 1">(connectionString)
+    use cmd = DvdRental.CreateCommand<"select rating, film_id from film limit 1; select film_id, rating from film limit 1">(ds)
     let res = cmd.TaskAsyncExecute().Result
     let actual1 = res.ResultSet1.Head
     let actual2 = res.ResultSet2.Head
@@ -882,7 +879,7 @@ let ``Record type reused within a single command with multiple statements``() =
 
 [<Fact>]
 let ``Bytea is properly encoded in reused type name``() =
-    use cmd = DvdRental.CreateCommand<"SELECT staff_id, picture FROM public.staff WHERE staff_id = 1", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT staff_id, picture FROM public.staff WHERE staff_id = 1", SingleRow = true>(ds)
     let actual = cmd.TaskAsyncExecute().Result.Value
     let expected = [|137uy; 80uy; 78uy; 71uy; 13uy; 10uy; 90uy; 10uy|]
 
@@ -893,7 +890,7 @@ let ``Bytea is properly encoded in reused type name``() =
 
 [<Fact>]
 let ``Record rows contain different values``() =
-    use cmd = DvdRental.CreateCommand<"SELECT staff_id, picture FROM public.staff">(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT staff_id, picture FROM public.staff">(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.NotEqual (actual.[0].staff_id, actual.[1].staff_id)
@@ -901,12 +898,12 @@ let ``Record rows contain different values``() =
 [<Fact>]
 let ``Interval update works``() =
     let entryId = Guid.NewGuid()
-    use insertCommand = DvdRental.CreateCommand<"INSERT INTO public.logs (id, log_time, some_data, modified) VALUES (@id, '2022-2-2', '{2}','22 hours')">(connectionString)
+    use insertCommand = DvdRental.CreateCommand<"INSERT INTO public.logs (id, log_time, some_data, modified) VALUES (@id, '2022-2-2', '{2}','22 hours')">(ds)
     insertCommand.TaskAsyncExecute(entryId).Wait ()
 
 
     // Now select for update
-    use cmdLog = DvdRental.CreateCommand<"SELECT * FROM public.logs WHERE id = @entry_id", ResultType.DataTable>(connectionString)
+    use cmdLog = DvdRental.CreateCommand<"SELECT * FROM public.logs WHERE id = @entry_id", ResultType.DataTable>(ds)
     let tblLog = cmdLog.TaskAsyncExecute(entry_id = entryId).Result
     let logRow = tblLog.Rows.[0]
 
@@ -915,16 +912,16 @@ let ``Interval update works``() =
 
     logRow.modified <- newTimespan
 
-    let updatedRows = tblLog.Update(connectionString)
+    let updatedRows = tblLog.Update(ds)
     Assert.Equal(1,updatedRows)
     
     // Now check one last time what row 2 is
-    use cmd = DvdRental.CreateCommand<"SELECT id, modified FROM public.logs WHERE id = @entry_id",SingleRow=true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT id, modified FROM public.logs WHERE id = @entry_id",SingleRow=true>(ds)
     let row = cmd.TaskAsyncExecute(entry_id = entryId).Result
     let expectedTS = TimeSpan(1,9,0,0) // 33 hours
     Assert.Equal(expectedTS, row.Value.modified)
 
-    use cleanupCommand = DvdRental.CreateCommand<"DELETE FROM public.logs WHERE id = @id">(connectionString)
+    use cleanupCommand = DvdRental.CreateCommand<"DELETE FROM public.logs WHERE id = @id">(ds)
     cleanupCommand.TaskAsyncExecute(entryId).Wait ()
 
 [<Fact>]
@@ -932,18 +929,18 @@ let ``Insert does skip computed columns``() =
     use table = new DvdRental.``public``.Tables.table_with_computed_columns()
     let row = table.NewRow(operand_1 = 10, operand_2 = 20)
     table.Rows.Add(row)
-    table.Update(connectionString) |> ignore
+    table.Update(ds) |> ignore
 
 [<Fact>]
 let ``Array collection type with records works`` () =
-    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, Array.length actual)
 
 [<Fact>]
 let ``Array collection type with records and multiple result sets works`` () =
-    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5; select * from actor limit 6", CollectionType = CollectionType.Array>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5; select * from actor limit 6", CollectionType = CollectionType.Array>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, Array.length actual.ResultSet1)
@@ -951,38 +948,38 @@ let ``Array collection type with records and multiple result sets works`` () =
 
 [<Fact>]
 let ``Array collection type with tuples works`` () =
-    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array, ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array, ResultType = ResultType.Tuples>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, Array.length actual)
 
 [<Fact>]
 let ``ResizeArray collection type with records works`` () =
-    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.ResizeArray>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.ResizeArray>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.Count)
 
 [<Fact>]
 let ``ResizeArray collection type with tuples works`` () =
-    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.ResizeArray, ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.ResizeArray, ResultType = ResultType.Tuples>(ds)
     let actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.Count)
 
 [<Fact>]
 let ``LazySeq works`` () =
-    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(ds)
     use actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.Seq |> Seq.take 5 |> Seq.length)
 
-    use cmd = DvdRental.CreateCommand<"SELECT film_id, rating from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT film_id, rating from film", CollectionType = CollectionType.LazySeq>(ds)
     use actual = cmd.TaskAsyncExecute().Result
 
     Assert.Equal (5, actual.Seq |> Seq.take 5 |> Seq.length)
 
-    use cmd = DvdRental.CreateCommand<"SELECT null::integer blah from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT null::integer blah from film", CollectionType = CollectionType.LazySeq>(ds)
     use actual = cmd.TaskAsyncExecute().Result
 
     actual.Seq
@@ -991,7 +988,7 @@ let ``LazySeq works`` () =
 
 [<Fact>]
 let ``Disposing of the command does not dispose of the underlying Npgsql objects and LazySeq still works`` () =
-    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(ds)
     use actual = cmd.TaskAsyncExecute().Result
     (cmd :> IDisposable).Dispose ()
 
@@ -999,7 +996,7 @@ let ``Disposing of the command does not dispose of the underlying Npgsql objects
 
 [<Fact>]
 let ``Disposing of the LazySeq causes further enumerations to fail`` () =
-    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(connectionString)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film", CollectionType = CollectionType.LazySeq>(ds)
     use actual = cmd.TaskAsyncExecute().Result
     (actual :> IDisposable).Dispose ()
 
@@ -1026,7 +1023,7 @@ let ``Disposing of the command does not close the connection in case of xctor`` 
 
 [<Fact>]
 let ``Manually mapped and cast composite type works`` () =
-    use cmd = DvdRental.CreateCommand<"select simple from table_with_composites where id = 1", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"select simple from table_with_composites where id = 1", SingleRow = true>(ds)
     let res = cmd.TaskAsyncExecute().Result.Value :?> SimpleComposite
 
     Assert.Equal (42L, res.SomeNumber)
@@ -1036,7 +1033,7 @@ let ``Manually mapped and cast composite type works`` () =
 [<Fact>]
 let ``NetTopology.Geometry roundtrip works`` () =
     let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
-    use cmd = DvdRental.CreateCommand<"select @p::geometry">(connectionString)
+    use cmd = DvdRental.CreateCommand<"select @p::geometry">(ds)
     let res = cmd.TaskAsyncExecute(input).Result.Head.Value
     
     Assert.Equal (input.Coordinate.X, res.Coordinate.X)
@@ -1044,7 +1041,7 @@ let ``NetTopology.Geometry roundtrip works`` () =
 [<Fact>]
 let ``NetTopology.Geometry roundtrip works record`` () =
     let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
-    use cmd = DvdRental.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg">(connectionString)
+    use cmd = DvdRental.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg">(ds)
     let res = cmd.TaskAsyncExecute(input).Result.Head.g.Value
     
     Assert.Equal (input.Coordinate.X, res.Coordinate.X)
@@ -1052,7 +1049,7 @@ let ``NetTopology.Geometry roundtrip works record`` () =
 [<Fact>]
 let ``NetTopology.Geometry roundtrip works record single row`` () =
     let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
-    use cmd = DvdRental.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg", SingleRow = true>(connectionString)
+    use cmd = DvdRental.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg", SingleRow = true>(ds)
     let res = cmd.TaskAsyncExecute(input).Result.Value
     
     Assert.Equal (input.Coordinate.X, res.g.Value.Coordinate.X)
@@ -1061,7 +1058,7 @@ let ``NetTopology.Geometry roundtrip works record single row`` () =
 [<Fact>]
 let ``NetTopology.Geometry roundtrip works tuple`` () =
     let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
-    use cmd = DvdRental.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg", ResultType = ResultType.Tuples>(connectionString)
+    use cmd = DvdRental.CreateCommand<"select @p::geometry g, 0 blah, null::geometry gg", ResultType = ResultType.Tuples>(ds)
     let res, _, _ = cmd.TaskAsyncExecute(input).Result.Head
     
     Assert.Equal (input.Coordinate.X, res.Value.Coordinate.X)

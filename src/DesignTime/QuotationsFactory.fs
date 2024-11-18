@@ -365,11 +365,11 @@ type internal QuotationsFactory () =
 
                 ProvidedMethod(
                     "Update", 
-                    ProvidedParameter("connectionString", typeof<string>) :: commonParams, 
+                    ProvidedParameter("dataSource", typeof<NpgsqlDataSource>) :: commonParams, 
                     typeof<int>,
-                    fun (Arg6(table, connectionString, batchSize, continueUpdateOnError, conflictOption, batchTimeout)) -> 
+                    fun (Arg6(table, dataSource, batchSize, continueUpdateOnError, conflictOption, batchTimeout)) -> 
                         <@@ 
-                            let conn = new NpgsqlConnection(%%connectionString)
+                            let conn = (%%dataSource: NpgsqlDataSource).CreateConnection ()
                             Utils.UpdateDataTable(%%table, conn, null, %%batchSize, %%continueUpdateOnError, %%conflictOption, %%batchTimeout)
                         @@>
                 )
@@ -480,7 +480,7 @@ type internal QuotationsFactory () =
                 Expr.NewObject (ctorImpl, [ Expr.Value prepare; cmd ])
 
             let parameters = [
-                ProvidedParameter("connectionString", typeof<string>)
+                ProvidedParameter("dataSource", typeof<NpgsqlDataSource>)
                 ProvidedParameter("commandTimeout", typeof<int>, optionalValue = defaultCommandTimeout) ]
 
             ProvidedMethod (methodName, parameters, cmdProvidedType, body, true)
@@ -505,7 +505,7 @@ type internal QuotationsFactory () =
                 Expr.NewObject (ctorImpl, [ Expr.Value (cmdProvidedType.Name.GetHashCode()); designTimeConfig; cmd ])
 
             let parameters = [
-                ProvidedParameter("connectionString", typeof<string>)
+                ProvidedParameter("dataSource", typeof<NpgsqlDataSource>)
                 ProvidedParameter("commandTimeout", typeof<int>, optionalValue = defaultCommandTimeout) ]
 
             ProvidedMethod (methodName, parameters, cmdProvidedType, body, true)
