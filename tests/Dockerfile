@@ -1,4 +1,4 @@
-FROM postgis/postgis:13-3.0-alpine
+FROM postgis/postgis:17-3.5-alpine
 
 ENV POSTGRES_DB dvdrental
 ENV POSTGRES_PASSWORD postgres

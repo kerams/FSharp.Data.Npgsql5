@@ -510,7 +510,7 @@ let binaryImport() =
             cmd.TaskAsyncExecute().Result |> Option.flatten 
         
         actors.AddRow(actor_id, first_name = "Tom", last_name = "Hanks", last_update = Some DateTime.Now)
-        let importedCount = actors.BinaryImport(conn, false)
+        let importedCount = actors.BinaryImport(conn, false).Result
         Assert.Equal(1UL, importedCount)
 
         use cmd = DvdRental.CreateCommand<getActorByName, XCtor = true>(conn, tx)
@@ -528,7 +528,7 @@ let ``binaryImport ignores identity columns when set`` () =
     table.AddRow (stuff = "one")
     table.AddRow (stuff = "two")
 
-    Assert.Equal (2UL, table.BinaryImport (conn, true))
+    Assert.Equal (2UL, table.BinaryImport(conn, true).Result)
     tran.Rollback ()
 
 [<Fact>]
@@ -548,7 +548,7 @@ let ``binaryImport does not ignore identity columns when not set`` () =
     table.Rows.Clear ()
     table.AddRow (Some 1000, stuff = "one")
     table.AddRow (Some 1001, stuff = "two")
-    Assert.Equal (2UL, table.BinaryImport (conn, false))
+    Assert.Equal (2UL, table.BinaryImport(conn, false).Result)
 
     use cmd = DvdRental.CreateCommand<"select * from table_with_identity", XCtor = true>(conn)
     let data = cmd.TaskAsyncExecute().Result

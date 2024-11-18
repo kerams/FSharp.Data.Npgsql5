@@ -1,4 +1,4 @@
-﻿namespace rec FSharp.Data.Npgsql
+﻿namespace FSharp.Data.Npgsql
 
 open Npgsql
 open System
@@ -44,8 +44,7 @@ type DesignTimeConfig = {
                 Prepare = split.[2] = "1"
             }
 
-[<EditorBrowsable(EditorBrowsableState.Never); Sealed>]
-type ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig, _cmd: NpgsqlCommand) =
+and [<EditorBrowsable(EditorBrowsableState.Never); Sealed>] ProvidedCommand (commandNameHash: int, cfgBuilder: unit -> DesignTimeConfig, _cmd: NpgsqlCommand) =
     static let cfgCache = Dictionary ()
     static let _lock = obj ()
 

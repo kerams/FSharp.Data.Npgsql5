@@ -1,10 +1,10 @@
-- Fix a potential `InvalidCastException` in a multi-statement command in combination with `SingleRow = true`
-
-### 3.0.0-alpha-7 - February 18th, 2024
-- Allow the use of Npgsql 8
+### 3.0.0 - November 18th, 2024
+- Allow the use of Npgsql 8 and 9
 - Remove Ply dependency
 - Remove synchronous and `async` commands - only tasks are supported
-- Remove the `ReuseProvidedTypes` static parameter - all provided record types are reused by default
+- Remove the `ReuseProvidedTypes` static parameter - all provided record types are reused from now on
+- Fix a potential `InvalidCastException` in a multi-statement command in combination with `SingleRow = true`
+- Make `BinaryImport` return `Task<uint64>` instead of `uint64`
 - Run-time optimizations
   - Use background tasks
   - Refactor internal locking and caching

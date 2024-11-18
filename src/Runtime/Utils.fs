@@ -263,7 +263,7 @@ type Utils () =
             for i, _ in columnsToInsert do
                 writer.Write row.[i]
 
-        writer.Complete ()
+        writer.CompleteAsync().AsTask ()
 
     #if DEBUG
     static member private Udp =

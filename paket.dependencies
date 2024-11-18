@@ -3,19 +3,19 @@ framework: netstandard2.0
 storage: none
 
 nuget FSharp.Core >= 7
-nuget Npgsql >= 6 < 9
-nuget Npgsql.NetTopologySuite >= 6 < 9
+nuget Npgsql >= 6 < 10
+nuget Npgsql.NetTopologySuite >= 6 < 10
 
 group tests
-  frameworks net8.0
+  frameworks net9.0
   storage: none
   source https://api.nuget.org/v3/index.json
   nuget Microsoft.NET.Test.Sdk
   nuget xunit
   nuget xunit.runner.visualstudio
-  nuget FSharp.Core ~> 8
-  nuget Npgsql >= 6 < 9 prerelease
-  nuget Npgsql.NetTopologySuite >= 6 < 9 prerelease
+  nuget FSharp.Core ~> 9
+  nuget Npgsql >= 6 < 10 prerelease
+  nuget Npgsql.NetTopologySuite >= 6 < 10 prerelease
 
 group tpsdk
   frameworks netstandard2.0
