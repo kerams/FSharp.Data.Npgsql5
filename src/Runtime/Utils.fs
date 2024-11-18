@@ -81,7 +81,8 @@ type Utils () =
         Delegate.CreateDelegate (typeof<Func<NpgsqlDataReader, int>>, mi) :?> Func<NpgsqlDataReader, int>
 
     static member NpgsqlCommand (dataSource: NpgsqlDataSource, sql, timeout) =
-        dataSource.CreateCommand (sql, CommandTimeout = timeout)
+        let conn = dataSource.CreateConnection ()
+        conn.CreateCommand (CommandText = sql, CommandTimeout = timeout)
 
     static member NpgsqlCommandXCtor (conn, tran, sql, timeout) =
         let cmd = new NpgsqlCommand (sql, conn)
