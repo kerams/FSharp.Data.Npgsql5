@@ -1,10 +1,13 @@
-### 3.0.0 - November 18th, 2024
+### 3.0.0-alpha-8 - November 19th, 2024
 - Allow the use of Npgsql 8 and 9
+- Drop Npgsql 6 support
 - Remove Ply dependency
 - Remove synchronous and `async` commands - only tasks are supported
 - Remove the `ReuseProvidedTypes` static parameter - all provided record types are reused from now on
 - Fix a potential `InvalidCastException` in a multi-statement command in combination with `SingleRow = true`
-- Make `BinaryImport` return `Task<uint64>` instead of `uint64`
+- Make `BinaryImport` return `Task<uint64>` instead of `uint64`, and require `CancellationToken`
+- `CreateCommand` now requires `NpgsqlDataSource` instead of a connection string
+  - Read about `NpgsqlDataSource` [here](https://www.npgsql.org/doc/basic-usage.html#data-source)
 - Run-time optimizations
   - Use background tasks
   - Refactor internal locking and caching

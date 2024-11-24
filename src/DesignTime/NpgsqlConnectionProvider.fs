@@ -16,7 +16,7 @@ let typeCache = ConcurrentDictionary<string, ProvidedTypeDefinition> ()
 let schemaCache = ConcurrentDictionary<string, DbSchemaLookups> ()
 
 let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, commands: ProvidedTypeDefinition, customTypes: Map<string, ProvidedTypeDefinition>,
-                           dbSchemaLookups: DbSchemaLookups, globalXCtor, globalPrepare: bool, providedTypeCache, globalCollectionType: CollectionType) = 
+                           dbSchemaLookups: DbSchemaLookups, globalXCtor, globalPrepare: bool, providedTypeCache, globalCollectionType: CollectionType, arrayTypeCompat) = 
         
     let staticParams = 
         [
@@ -97,7 +97,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                                 Var ("x", typeof<unit>),
                                 Expr.Call (typeof<DesignTimeConfigSingleStatement>.GetMethod (nameof DesignTimeConfigSingleStatement.Create, BindingFlags.Static ||| BindingFlags.Public), [
                                     Expr.Value $"""{if collectionType = CollectionType.LazySeq then "1" else "0"}|{int resultType}|{if prepare then "1" else "0"}"""
-                                    Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr true))
+                                    Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr (true, arrayTypeCompat)))
                                 ]))
 
                         QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, typeof<ProvidedCommandSingleStatement>, designTimeConfig, xctor, methodName, sqlStatement)
@@ -113,7 +113,7 @@ let addCreateCommandMethod(connectionString, rootType: ProvidedTypeDefinition, c
                                 Var ("x", typeof<unit>),
                                 Expr.Call (typeof<DesignTimeConfig>.GetMethod (nameof DesignTimeConfig.Create, BindingFlags.Static ||| BindingFlags.Public), [
                                     Expr.Value $"""{int resultType}|{int collectionType}|{if prepare then "1" else "0"}|{if singleRow then "1" else "0"}"""
-                                    QuotationsFactory.BuildDataColumnsExpr (statements, resultType <> ResultType.DataTable)
+                                    QuotationsFactory.BuildDataColumnsExpr (statements, resultType <> ResultType.DataTable, arrayTypeCompat)
                                 ]))
 
                         QuotationsFactory.GetCommandFactoryMethod (cmdProvidedType, typeof<ProvidedCommand>, designTimeConfig, xctor, methodName, sqlStatement)
@@ -152,7 +152,7 @@ let createTableTypes(customTypes : Map<string, ProvidedTypeDefinition>, item: Db
             do //ctor
                 let invokeCode _ = 
 
-                    let columnExprs = [ for c in columns -> c.ToDataColumnExpr false ]
+                    let columnExprs = [ for c in columns -> c.ToDataColumnExpr (false, true) ] // force arrayCompat here
 
                     let twoPartTableName = 
                         use x = new NpgsqlCommandBuilder()
@@ -178,9 +178,10 @@ let createTableTypes(customTypes : Map<string, ProvidedTypeDefinition>, item: Db
                         [
                             ProvidedParameter ("connection", typeof<NpgsqlConnection>)
                             ProvidedParameter ("ignoreIdentityColumns", typeof<bool>)
+                            ProvidedParameter ("cancellationToken", typeof<Threading.CancellationToken>)
                         ],
                         typeof<Task<uint64>>,
-                        fun args -> Expr.Call (typeof<Utils>.GetMethod (nameof Utils.BinaryImport), [ Expr.Coerce (args.[0], typeof<DataTable<DataRow>>); args.[1]; args.[2] ])
+                        fun args -> Expr.Call (typeof<Utils>.GetMethod (nameof Utils.BinaryImport), [ Expr.Coerce (args.[0], typeof<DataTable<DataRow>>); args.[1]; args.[2]; args.[3] ])
                     )
                 dataTableType.AddMember binaryImport
 
@@ -190,7 +191,7 @@ let createTableTypes(customTypes : Map<string, ProvidedTypeDefinition>, item: Db
 
     tables
 
-let createRootType (assembly, nameSpace: string, typeName, connectionString, xctor, prepare, collectionType) =
+let createRootType (assembly, nameSpace: string, typeName, connectionString, xctor, prepare, collectionType, arrayTypeCompat) =
     if String.IsNullOrWhiteSpace connectionString then invalidArg "Connection" "Value is empty!" 
         
     let databaseRootType = ProvidedTypeDefinition (assembly, nameSpace, typeName, baseType = Some typeof<obj>, hideObjectMethods = true)
@@ -220,7 +221,7 @@ let createRootType (assembly, nameSpace: string, typeName, connectionString, xct
 
     let commands = ProvidedTypeDefinition("Commands", None)
     databaseRootType.AddMember commands
-    addCreateCommandMethod (connectionString, databaseRootType, commands, customTypes, schemaLookups, xctor, prepare, typeCache, collectionType)
+    addCreateCommandMethod (connectionString, databaseRootType, commands, customTypes, schemaLookups, xctor, prepare, typeCache, collectionType, arrayTypeCompat)
 
     databaseRootType
 
@@ -234,8 +235,9 @@ let internal getProviderType (assembly, nameSpace) =
             ProvidedStaticParameter("XCtor", typeof<bool>, false) 
             ProvidedStaticParameter("Prepare", typeof<bool>, false)
             ProvidedStaticParameter("CollectionType", typeof<CollectionType>, CollectionType.List)
+            ProvidedStaticParameter("ArrayTypeCompat", typeof<bool>, false)
         ],
-        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3])))
+        fun typeName args -> typeCache.GetOrAdd (typeName, fun typeName -> createRootType (assembly, nameSpace, typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4])))
 
     providerType.AddXmlDoc """
 <summary>Typed access to PostgreSQL programmable objects, tables and functions.</summary> 
@@ -244,6 +246,7 @@ let internal getProviderType (assembly, nameSpace) =
 <param name='Prepare'>If set, commands will be executed as prepared. See Npgsql documentation for prepared statements.</param>
 <param name='ReuseProvidedTypes'>Reuse the return type for commands that select data of identical shape. Please see the readme for details.</param>
 <param name='CollectionType'>Indicates whether rows should be returned in a list, array or ResizeArray.</param>
+<param name='ArrayTypeCompat'>Compat mode for Npgsql versions below 9. Forces a different internal array type handling, primarily in data tables.</param>
 """
     providerType
 

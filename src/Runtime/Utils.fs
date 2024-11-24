@@ -242,7 +242,7 @@ type Utils () =
 
         dataAdapter.Update(table)
 
-    static member BinaryImport (table: DataTable<DataRow>, connection: NpgsqlConnection, ignoreIdentityColumns) =
+    static member BinaryImport (table: DataTable<DataRow>, connection: NpgsqlConnection, ignoreIdentityColumns, cancellationToken) =
         let columnsToInsert =
             Seq.cast<DataColumn> table.Columns
             |> Seq.indexed
@@ -255,14 +255,18 @@ type Utils () =
             |> String.concat ", "
             |> sprintf "COPY %s (%s) FROM STDIN (FORMAT BINARY)" table.TableName
 
-        use writer = connection.BeginBinaryImport copyFromCommand
+        backgroundTask {
+            use writer = connection.BeginBinaryImport copyFromCommand
 
-        for row in table.Rows do
-            writer.StartRow ()
-            for i, _ in columnsToInsert do
-                writer.Write row.[i]
+            for row in table.Rows do
+                writer.StartRow ()
 
-        writer.CompleteAsync().AsTask ()
+                // manual for loop, otherwise the compiler is confused and cannot statically compile the task
+                for i in 0 .. columnsToInsert.Length - 1 do
+                    writer.Write row.[snd columnsToInsert.[i]]
+
+            return! writer.CompleteAsync cancellationToken
+        }
 
     #if DEBUG
     static member private Udp =

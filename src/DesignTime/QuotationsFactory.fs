@@ -517,13 +517,13 @@ type internal QuotationsFactory () =
         elif resultType = ResultType.DataTable && not returnType.Single.IsPrimitive then
             returnType.Single |> declaringType.AddMember
 
-    static member BuildDataColumnsExpr (statements, slimDataColumns) =
+    static member BuildDataColumnsExpr (statements, slimDataColumns, arrayTypeCompat) =
         Expr.NewArray (typeof<DataColumn[]>,
             statements
             |> List.map (fun x ->
                 match x.Type with
                 | Query columns ->
-                    Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr slimDataColumns))
+                    Expr.NewArray (typeof<DataColumn>, columns |> List.map (fun x -> x.ToDataColumnExpr (slimDataColumns, arrayTypeCompat)))
                 | _ ->
                     QuotationsFactory.DataColumnArrayEmptyExpr))
 

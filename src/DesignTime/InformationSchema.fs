@@ -178,7 +178,7 @@ type Column =
         else
             if nullable then typedefof<_ option>.MakeGenericType this.ClrType else this.ClrType
 
-    member this.ToDataColumnExpr slim =
+    member this.ToDataColumnExpr (slim, arrayTypeCompat) =
         // DataTable support requires several parameters that are otherwise unused and in these cases the expression can be greatly simplified
         if slim then
             let mi = typeof<Utils>.GetMethod (nameof Utils.ToDataColumnSlim, BindingFlags.Static ||| BindingFlags.Public)
@@ -187,7 +187,7 @@ type Column =
             Expr.Call (mi, [ Expr.Value stringValues ])
         else
             let typeName = 
-                let clrType = if this.ClrType.IsArray then typeof<Array> else this.ClrType
+                let clrType = if this.ClrType.IsArray && arrayTypeCompat then typeof<Array> else this.ClrType
                 clrType.FullName
 
             let mi = typeof<Utils>.GetMethod (nameof Utils.ToDataColumn, BindingFlags.Static ||| BindingFlags.Public)

@@ -15,13 +15,14 @@ let dvdRental = "Host=localhost;Username=postgres;Database=dvdrental"
 open FSharp.Data.Npgsql
 
 type DvdRental = NpgsqlConnection<dvdRental>
+let dataSource = Npgsql.NpgsqlDataSource.Create dvdRental
 ```
 
 ## Basic query
 
 ```fsharp
 let printMovies () = task {
-    use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3">(dvdRental)
+    use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3">(dataSource)
     let! movies = cmd.TaskAsyncExecute()
 
     for x in movies do   
@@ -31,7 +32,7 @@ let printMovies () = task {
 ## Parameterized query
 
 ```fsharp
-use cmd = DvdRental.CreateCommand<"SELECT title FROM public.film WHERE length > @longer_than">(dvdRental)
+use cmd = DvdRental.CreateCommand<"SELECT title FROM public.film WHERE length > @longer_than">(dataSource)
 let longerThan = TimeSpan.FromHours(3.)
 let xs: string list = cmd.TaskAsyncExecute(longer_than = int16 longerThan.TotalMinutes).Result |> Seq.toList 
 printfn "Movies longer than %A:\n%A" longerThan xs
@@ -41,7 +42,7 @@ printfn "Movies longer than %A:\n%A" longerThan xs
 Set `SingleRow = true` to retrieve a single row as an option instead of a collection of rows. `TaskAsyncExecute` will throw if the result set contains more than one row.
 
 ```fsharp
-use cmd = DvdRental.CreateCommand<"SELECT current_date as today", SingleRow = true>(dvdRental)
+use cmd = DvdRental.CreateCommand<"SELECT current_date as today", SingleRow = true>(dataSource)
 cmd.TaskAsyncExecute().Result |> printfn "Today is: %A"
 ```
 
@@ -52,7 +53,7 @@ There are 4 result types:
  - `ResultType.Tuples` - returns a tuple whose elements represent row's columns.
  
  ```fsharp
- use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3", ResultType.Tuples>(dvdRental)
+ use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3", ResultType.Tuples>(dataSource)
  for title, releaseYear in cmd.TaskAsyncExecute().Result do   
      printfn "Movie '%s' released in %i." title releaseYear.Value
  ```
@@ -71,14 +72,14 @@ You can customize the type of collection commands return globally on `NpgsqlConn
 
 ```fsharp
 let doStuff = task {
-    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array>(dvdRental)
+    use cmd = DvdRental.CreateCommand<"SELECT * from film limit 5", CollectionType = CollectionType.Array>(dataSource)
     let! actual = cmd.TaskAsyncExecute() // this is an array instead of list now
     actual |> Array.iter (printfn "%A") }
 ```
 
 ```fsharp
 let lazyData () =
-    use cmd = DvdRental.CreateCommand<"SELECT * from generate_series(1, 1000000000)", CollectionType = CollectionType.LazySeq>(dvdRental)
+    use cmd = DvdRental.CreateCommand<"SELECT * from generate_series(1, 1000000000)", CollectionType = CollectionType.LazySeq>(dataSource)
     cmd.TaskAsyncExecute().Result
 
 let doStuff () =
@@ -108,12 +109,12 @@ let mapFilm (x: DvdRental.``rating:Option<public.mpaa_rating>, title:String``) =
     { Title = x.title; Rating = x.rating }
 	
 let getAllFilmsWithRatings () =
-    use cmd = getAllFilmsWithRatingsCommand dvdRental
+    use cmd = getAllFilmsWithRatingsCommand dataSource
     let res = cmd.TaskAsyncExecute().Result
     res |> List.map mapFilm
 	
 let getFilmWithRatingById id =
-    use cmd = DvdRental.CreateCommand<"select title, rating from film where film_id = @id", SingleRow = true>(dvdRental)
+    use cmd = DvdRental.CreateCommand<"select title, rating from film where film_id = @id", SingleRow = true>(dataSource)
     let res = cmd.TaskAsyncExecute(id).Result
     res |> Option.map mapFilm
 ```
@@ -143,16 +144,6 @@ type DvdRental = FSharp.Data.Npgsql.NpgsqlConnection<connectionString>
 type PgConnection = Npgsql.NpgsqlConnection
 ```
 
-- Isolate usage by module or file  
-
-`Npgsql.NpgsqlConnection` collision can be solved by a simple helper function:
-```fsharp
-let openConnection(connectionString) = 
-    let conn = new Npgsql.NpgsqlConnection(connectionString)
-    conn.Open()
-    conn
-```
-
 ## Prepared statements
 [Prepared statements](https://www.npgsql.org/doc/prepare.html) are supported by setting the static parameter `Prepare` to `true`. For `NpgsqlConnection` this can be set when defining the type itself and also overriden when calling `CreateCommand`.
 
@@ -161,12 +152,12 @@ let openConnection(connectionString) =
 type DvdRental = NpgsqlConnection<dvdRental, Prepare = true>
 
 // Will be prepared
-use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3">(dvdRental)
+use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3">(dataSource)
 for x in cmd.TaskAsyncExecute().Result do   
     printfn "Movie '%s' released in %i." x.title x.release_year.Value
 
 // Overrides the DvdRental setting and thus won't be prepared
-use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3", Prepare = false>(dvdRental)
+use cmd = DvdRental.CreateCommand<"SELECT title, release_year FROM public.film LIMIT 3", Prepare = false>(dataSource)
 for x in cmd.TaskAsyncExecute().Result do   
     printfn "Movie '%s' released in %i." x.title x.release_year.Value
 ```
@@ -182,7 +173,7 @@ use cmd = DvdRental.CreateCommand<"
     SET activebool = false
     WHERE email = @email
 	AND activebool
-", SingleRow = true>(dvdRental)
+", SingleRow = true>(dataSource)
 
 let recordsAffected = cmd.TaskAsyncExecute(email).Result
 if recordsAffected = 0
@@ -195,16 +186,15 @@ use restore =
 	UPDATE public.customer
 	SET activebool = true
 	WHERE email = @email
-    ">(dvdRental)
+    ">(dataSource)
 assert( restore.TaskAsyncExecute(email).Result = 1)
 ```
 - `ResultType.DataTable` - good to handle updates, deletes, upserts or inserts mixed with any above. 
 
 ```fsharp
 //Deactivate customer if found and active
-use conn = new Npgsql.NpgsqlConnection(dvdRental)
-conn.Open()
-use tx = conn.BeginTransaction()
+use conn = dataSource.OpenConnection ()
+use tx = conn.BeginTransaction ()
 use cmd =
 DvdRental.CreateCommand<"
     SELECT customer_id, activebool
@@ -224,9 +214,8 @@ assert( t.Update(conn, tx) = 1)
 - Statically-typed data tables for inserts-only scenarios (for example ETL).
 
 ```fsharp
-use conn = new Npgsql.NpgsqlConnection(dvdRental)
-conn.Open()
-use tx = conn.BeginTransaction()
+use conn = dataSource.OpenConnection ()
+use tx = conn.BeginTransaction ()
 let t = new DvdRental.``public``.Tables.actor()
 
 let r = t.NewRow(first_name = "Tom", last_name = "Hanks")
@@ -246,9 +235,8 @@ It's worth noting that statically typed tables know to auto-fetch generated IDs 
 In order to use transactions across commands, pass the `XCtor = true` static parameter to `CreateCommand` so that the method signature accepts a connection + optional transaction. `XCtor` stands for extended constructor.
 
 ```fsharp
-use conn = new Npgsql.NpgsqlConnection(dvdRental)
-conn.Open()
-use tx = conn.BeginTransaction()
+use conn = dataSource.OpenConnection ()
+use tx = conn.BeginTransaction ()
 use cmd = 
 DvdRental.CreateCommand<"        
     INSERT INTO public.actor (first_name, last_name)
@@ -262,9 +250,8 @@ assert(cmd.TaskAsyncExecute(firstName = "Tom", lastName = "Hanks").Result = 1)
 ```fsharp
 type DvdRentalXCtor = NpgsqlConnection<dvdRental, XCtor = true>
 
-use conn = new Npgsql.NpgsqlConnection(dvdRental)
-conn.Open()
-use tx = conn.BeginTransaction()
+use conn = dataSource.OpenConnection ()
+use tx = conn.BeginTransaction ()
 use cmd =
 DvdRentalXCtor.CreateCommand<"
     INSERT INTO public.actor (first_name, last_name)
@@ -280,7 +267,7 @@ By default all input parameters of `TaskAsyncExecute` methods generated by the t
 ```fsharp
 use cmd = new NpgsqlCommand<"
 SELECT coalesce(@x, 'Empty') AS x
-", dvdRental, AllParametersOptional = true, SingleRow = true>(dvdRental)
+", dvdRental, AllParametersOptional = true, SingleRow = true>(dataSource)
 
 assert( cmd.TaskAsyncExecute(Some "test").Result = Some( Some "test"))
 assert( cmd.TaskAsyncExecute().Result = Some( Some "Empty")) 
@@ -290,9 +277,8 @@ assert( cmd.TaskAsyncExecute().Result = Some( Some "Empty"))
 To upload a large amount of data fast, use the `BinaryImport` method on statically typed data tables:
 ```fsharp
 let firstName, lastName = "Tom", "Hanks"
-use conn = new Npgsql.NpgsqlConnection(dvdRental)
-conn.Open()
-use tx = conn.BeginTransaction()
+use conn = dataSource.OpenConnection ()
+use tx = conn.BeginTransaction ()
 
 let actors = new DvdRental.``public``.Tables.actor()
 
@@ -304,7 +290,7 @@ cmd.TaskAsyncExecute().Result |> Option.flatten
 //Therefore we must provide values for actor_id and last_update columns which are optional for plain Update method.
 actors.AddRow(actor_id, first_name = "Tom", last_name = "Hanks", last_update = Some DateTime.Now)
 
-let rowsImported = actors.BinaryImport(conn, false)
+let rowsImported = actors.BinaryImport(conn, false, System.Threading.CancellationToken.None).Result
 
 use cmd =
 DvdRental.CreateCommand<
@@ -342,7 +328,7 @@ Npgsql.NpgsqlConnection.GlobalTypeMapper.UseNetTopologySuite () |> ignore
 
   - One unfortunate PostgreSQL limitation is that column nullability cannot be inferred for derived columns. A command 
   ```fsharp
-  use cmd = DvdRental.CreateCommand<"SELECT 42 AS Answer">(dvdRental)
+  use cmd = DvdRental.CreateCommand<"SELECT 42 AS Answer">(dataSource)
   assert( cmd.TaskAsyncExecute().Result |> Seq.exactlyOne = Some 42)
   ```
   will infer `seq<Option<int>>` as the result although it cleary should be `seq<int>`. 

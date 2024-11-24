@@ -4,6 +4,7 @@ open System
 open Xunit
 open FSharp.Data.Npgsql
 open System.Reflection
+open System.Threading
 open type Npgsql.NpgsqlNetTopologySuiteExtensions
 open NetTopologySuite.Geometries
 
@@ -507,7 +508,7 @@ let binaryImport() =
             cmd.TaskAsyncExecute().Result |> Option.flatten 
         
         actors.AddRow(actor_id, first_name = "Tom", last_name = "Hanks", last_update = Some DateTime.Now)
-        let importedCount = actors.BinaryImport(conn, false).Result
+        let importedCount = actors.BinaryImport(conn, false, CancellationToken.None).Result
         Assert.Equal(1UL, importedCount)
 
         use cmd = DvdRental.CreateCommand<getActorByName, XCtor = true>(conn, tx)
@@ -525,7 +526,7 @@ let ``binaryImport ignores identity columns when set`` () =
     table.AddRow (stuff = "one")
     table.AddRow (stuff = "two")
 
-    Assert.Equal (2UL, table.BinaryImport(conn, true).Result)
+    Assert.Equal (2UL, table.BinaryImport(conn, true, CancellationToken.None).Result)
     tran.Rollback ()
 
 [<Fact>]
@@ -537,7 +538,7 @@ let ``binaryImport does not ignore identity columns when not set`` () =
     table.AddRow (stuff = "one")
     table.AddRow (stuff = "two")
 
-    let e = Assert.Throws<Npgsql.PostgresException> (fun () -> table.BinaryImport (conn, false) |> ignore)
+    let e = Assert.Throws<AggregateException>(fun () -> table.BinaryImport(conn, false, CancellationToken.None).Wait ()).InnerException :?> Npgsql.PostgresException
     Assert.Equal ("23505", e.SqlState) // primary key violation
     tran.Rollback ()
     use tran = conn.BeginTransaction ()
@@ -545,7 +546,7 @@ let ``binaryImport does not ignore identity columns when not set`` () =
     table.Rows.Clear ()
     table.AddRow (Some 1000, stuff = "one")
     table.AddRow (Some 1001, stuff = "two")
-    Assert.Equal (2UL, table.BinaryImport(conn, false).Result)
+    Assert.Equal (2UL, table.BinaryImport(conn, false, CancellationToken.None).Result)
 
     use cmd = DvdRental.CreateCommand<"select * from table_with_identity", XCtor = true>(conn)
     let data = cmd.TaskAsyncExecute().Result
