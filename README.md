@@ -310,18 +310,21 @@ PostGIS columns and input parameters of type `geometry` are supported using [Net
 open NetTopologySuite.Geometries
 
 let input = Geometry.DefaultFactory.CreatePoint (Coordinate (55., 0.))
-use cmd = DvdRental.CreateCommand<"select @p::geometry">(connectionString)
+use cmd = DvdRental.CreateCommand<"select @p::geometry">(dataSource)
 let res = cmd.TaskAsyncExecute(input).Result.Head.Value
     
 Assert.Equal (input.Coordinate.X, res.Coordinate.X)
 ```
 
-If you intend to use `geometry`, you have to register the type handler globally during the startup of your application.
+If you intend to use `geometry`, you have to register the type handler in the data source.
 
 ```fsharp
 open type Npgsql.NpgsqlNetTopologySuiteExtensions
 
-Npgsql.NpgsqlConnection.GlobalTypeMapper.UseNetTopologySuite () |> ignore
+let dataSource =
+    let x = Npgsql.NpgsqlDataSourceBuilder connectionString
+    x.UseNetTopologySuite () |> ignore
+    x.Build ()
 ```
 
 ## Limitations

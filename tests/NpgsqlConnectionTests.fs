@@ -8,15 +8,12 @@ open System.Threading
 open type Npgsql.NpgsqlNetTopologySuiteExtensions
 open NetTopologySuite.Geometries
 
-#nowarn "0044"
+#nowarn 44
 
 type SimpleComposite () =
     member val SomeArray: int[] = null with get, set
     member val SomeText: string = null with get, set
     member val SomeNumber = 0L with get, set
-
-Npgsql.NpgsqlConnection.GlobalTypeMapper.UseNetTopologySuite () |> ignore
-Npgsql.NpgsqlConnection.GlobalTypeMapper.MapComposite<SimpleComposite> "simple_type" |> ignore
 
 let isStatementPrepared (connection: Npgsql.NpgsqlConnection) =
     // npgsql 7
@@ -61,7 +58,10 @@ let getActorByName = "
 [<Literal>]
 let connectionString = "Host=localhost;Username=postgres;Password=postgres;Database=dvdrental;Port=5432"
 
-let ds = Npgsql.NpgsqlDataSource.Create connectionString
+let ds =
+    let x = Npgsql.NpgsqlDataSourceBuilder connectionString
+    x.UseNetTopologySuite().MapComposite<SimpleComposite> "simple_type" |> ignore
+    x.Build ()
 
 let openConnection () = 
     ds.OpenConnection ()
