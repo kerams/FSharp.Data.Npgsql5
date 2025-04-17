@@ -1,4 +1,4 @@
-### 3.0.0-alpha-8 - November 19th, 2024
+### 3.0.1 - April 17th, 2025
 - Allow the use of Npgsql 8 and 9
 - Drop Npgsql 6 support
 - Remove Ply dependency
