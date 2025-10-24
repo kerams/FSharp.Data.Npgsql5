@@ -1,3 +1,6 @@
+### 3.0.2 - October 24th, 2025
+- Allow the use of Npgsql 10
+
 ### 3.0.1 - April 17th, 2025
 - Allow the use of Npgsql 8 and 9
 - Drop Npgsql 6 support
