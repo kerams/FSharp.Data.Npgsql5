@@ -12,13 +12,13 @@ jobs:
 
     steps:
       - name: Check out repository code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: Setup docker compose
         run: docker compose -f tests/docker-compose.yml build && docker compose -f tests/docker-compose.yml up -d
 
       - name: Setup dotnet
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '9.0.x'
 
