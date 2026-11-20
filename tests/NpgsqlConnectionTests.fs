@@ -56,7 +56,7 @@ let getActorByName = "
     WHERE first_name = @firstName AND last_name = @lastName "
 
 [<Literal>]
-let connectionString = "Host=localhost;Username=postgres;Password=postgres;Database=dvdrental;Port=5432"
+let connectionString = "Host=localhost;Username=postgres;Password=postgres;Database=dvdrental;Port=5433"
 
 let ds =
     let x = Npgsql.NpgsqlDataSourceBuilder connectionString
@@ -120,7 +120,7 @@ let selectSingleColumn() =
     use cmd = DvdRental.CreateCommand<"SELECT * FROM generate_series(0, 10)">(ds)
 
     Assert.Equal<_ seq>(
-        { 0 .. 10 }, 
+        seq { 0 .. 10 }, 
         cmd.TaskAsyncExecute().Result |> Seq.choose id 
     )
 
@@ -129,7 +129,7 @@ let ``selectSingleColumn tuple`` () =
     use cmd = DvdRental.CreateCommand<"SELECT * FROM generate_series(0, 10)", ResultType = ResultType.Tuples>(ds)
 
     Assert.Equal<_ seq>(
-        { 0 .. 10 }, 
+        seq { 0 .. 10 }, 
         cmd.TaskAsyncExecute().Result |> Seq.choose id 
     )
 
@@ -141,7 +141,7 @@ let paramInFilter() =
         ">(ds)
 
     Assert.Equal<_ seq>(
-        { 0 .. 2 .. 10 }, 
+        seq { 0 .. 2 .. 10 }, 
         cmd.TaskAsyncExecute(div = 2).Result |> Seq.choose id 
     )
 
@@ -154,7 +154,7 @@ let paramInLimit() =
 
     let limit = 5
     Assert.Equal<_ seq>(
-        { 0 .. 10 } |> Seq.take limit , 
+        seq { 0 .. 10 } |> Seq.take limit , 
         cmd.TaskAsyncExecute(int64 limit).Result |> Seq.choose id
     )
 
