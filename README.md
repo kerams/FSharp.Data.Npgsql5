@@ -349,12 +349,6 @@ From the repo root folder
 
 (Notes to self)
 ```
-cd src/Design
-dotnet build -c Release
-cd ../Runtime
-dotnet build -c Release
-vi paket.template 
-bump version number
-paket pack
-paket push FSharp.Data.Npgsql.<versionNumber>.nupkg --api-key <insert api key>
+git tag v4.0.0
+git push origin v4.0.0
 ```

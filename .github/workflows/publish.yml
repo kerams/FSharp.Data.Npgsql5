@@ -28,6 +28,8 @@ jobs:
 
       - run: dotnet tool restore
 
+      - run: dotnet restore FSharp.Data.Npgsql.sln
+
       # paket.template packs bin/Release, and the tests reference that same build output
       - run: dotnet build src/Runtime/Runtime.fsproj -c Release
 
