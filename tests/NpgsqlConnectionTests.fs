@@ -708,8 +708,8 @@ let ``Two selects record2``() =
     let actual = cmd.TaskAsyncExecute(arr, 2, true).Result
     Assert.Equal ("Nick", actual.ResultSet1.[0].name)
     Assert.Equal ("Ace Goldfinger", actual.ResultSet2.[0].name)
-    Assert.Equal<int> (arr, actual.ResultSet1.[0].int4.Value)
-    Assert.Equal<int> (arr, actual.ResultSet2.[0].int4.Value)
+    Assert.Equal<int[]> (arr, actual.ResultSet1.[0].int4.Value)
+    Assert.Equal<int[]> (arr, actual.ResultSet2.[0].int4.Value)
 
 [<Fact>]
 let ``Two selects record3``() =
@@ -718,8 +718,8 @@ let ``Two selects record3``() =
     let actual = cmd.TaskAsyncExecute(arr, 2, true).Result
     Assert.Equal ("Nick", actual.ResultSet1.[0].name)
     Assert.Equal ("Ace Goldfinger", actual.ResultSet2.[0].name)
-    Assert.Equal<int> (arr, actual.ResultSet1.[0].int4.Value)
-    Assert.Equal<int> (arr, actual.ResultSet2.[0].int4.Value)
+    Assert.Equal<int[]> (arr, actual.ResultSet1.[0].int4.Value)
+    Assert.Equal<int[]> (arr, actual.ResultSet2.[0].int4.Value)
 
 [<Fact>]
 let ``Queries against system catalogs work``() =
@@ -1029,7 +1029,7 @@ let ``Manually mapped and cast composite type works`` () =
 
     Assert.Equal (42L, res.SomeNumber)
     Assert.Equal ("blah", res.SomeText)
-    Assert.Equal<int> ([| 1; 2 |], res.SomeArray)
+    Assert.Equal<int[]> ([| 1; 2 |], res.SomeArray)
 
 [<Fact>]
 let ``NetTopology.Geometry roundtrip works`` () =

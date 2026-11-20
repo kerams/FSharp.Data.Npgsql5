@@ -1,3 +1,8 @@
+### 4.0.0 - November 20th, 2026
+- Allow the use of Npgsql 11
+- Fix `InvalidOperationException` (inconvertible type mismatch) when loading a data table with array columns on Npgsql 10 and newer
+- Remove the `ArrayTypeCompat` static parameter - array columns in data tables now adapt to the Npgsql version at run time
+
 ### 3.0.2 - October 24th, 2025
 - Allow the use of Npgsql 10
 

@@ -67,35 +67,29 @@ NUGET
 
 GROUP tests
 STORAGE: NONE
-RESTRICTION: == net9.0
+RESTRICTION: == net11.0
 NUGET
   remote: https://api.nuget.org/v3/index.json
     FSharp.Core (9.0.303)
-    Microsoft.CodeCoverage (18.0)
-    Microsoft.Extensions.DependencyInjection.Abstractions (10.0.0-rc.2.25502.107)
-    Microsoft.Extensions.Logging.Abstractions (10.0.0-rc.2.25502.107)
-      Microsoft.Extensions.DependencyInjection.Abstractions (>= 10.0.0-rc.2.25502.107)
-      System.Diagnostics.DiagnosticSource (>= 10.0.0-rc.2.25502.107)
-    Microsoft.NET.Test.Sdk (18.0)
-      Microsoft.CodeCoverage (>= 18.0)
-      Microsoft.TestPlatform.TestHost (>= 18.0)
-    Microsoft.TestPlatform.ObjectModel (18.0)
-      System.Reflection.Metadata (>= 8.0)
-    Microsoft.TestPlatform.TestHost (18.0)
-      Microsoft.TestPlatform.ObjectModel (>= 18.0)
-      Newtonsoft.Json (>= 13.0.3)
+    Microsoft.CodeCoverage (18.12)
+    Microsoft.Extensions.DependencyInjection.Abstractions (11.0)
+    Microsoft.Extensions.Logging.Abstractions (11.0)
+    Microsoft.NET.Test.Sdk (18.12)
+      Microsoft.CodeCoverage (>= 18.12)
+      Microsoft.TestPlatform.TestHost (>= 18.12)
+    Microsoft.TestPlatform.ObjectModel (18.12)
+    Microsoft.TestPlatform.TestHost (18.12)
+      Microsoft.TestPlatform.ObjectModel (>= 18.12)
     NetTopologySuite (2.6)
     NetTopologySuite.IO.PostGis (2.1)
       NetTopologySuite (>= 2.0 < 3.0.0-A)
-    Newtonsoft.Json (13.0.4)
-    Npgsql (10.0.0-rc.1)
-      Microsoft.Extensions.Logging.Abstractions (>= 10.0.0-rc.1.25451.107)
-    Npgsql.NetTopologySuite (10.0.0-rc.1)
+    Npgsql (11.0)
+      Microsoft.Extensions.DependencyInjection.Abstractions (>= 11.0)
+      Microsoft.Extensions.Logging.Abstractions (>= 11.0)
+    Npgsql.NetTopologySuite (11.0)
       NetTopologySuite (>= 2.6)
       NetTopologySuite.IO.PostGis (>= 2.1)
-      Npgsql (>= 10.0.0-rc.1)
-    System.Diagnostics.DiagnosticSource (10.0.0-rc.2.25502.107)
-    System.Reflection.Metadata (9.0.10)
+      Npgsql (>= 11.0)
     xunit (2.9.3)
       xunit.analyzers (>= 1.18)
       xunit.assert (>= 2.9.3)
@@ -110,7 +104,7 @@ NUGET
       xunit.abstractions (>= 2.0.3)
     xunit.extensibility.execution (2.9.3)
       xunit.extensibility.core (2.9.3)
-    xunit.runner.visualstudio (3.1.5)
+    xunit.runner.visualstudio (4.0.1)
 
 GROUP tpsdk
 STORAGE: NONE

@@ -81,8 +81,25 @@ and [<EditorBrowsable(EditorBrowsableState.Never); Sealed>] ProvidedCommand (com
     static member internal LoadDataTable (cursor: NpgsqlDataReader) cmd (columns: DataColumn[]) =
         let result = new FSharp.Data.Npgsql.DataTable<DataRow>(selectCommand = cmd)
 
+        // Npgsql < 9 and >= 10 report array fields as System.Array, which DataTable.Load refuses to map onto
+        // a strongly typed array column, so such columns have to be typed as Array too. The values are still T[].
+        let readerReportsArray name =
+            let mutable found = false
+            let mutable i = 0
+
+            while not found && i < cursor.FieldCount do
+                found <- cursor.GetName i = name && cursor.GetFieldType i = typeof<Array>
+                i <- i + 1
+
+            found
+
         for c in columns do
-            CloneDataColumn c |> result.Columns.Add
+            let c = CloneDataColumn c
+
+            if c.DataType.IsArray && readerReportsArray c.ColumnName then
+                c.DataType <- typeof<Array>
+
+            result.Columns.Add c
 
         result.Load cursor
         result

@@ -1,0 +1,62 @@
+name: Publish to NuGet
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # required for NuGet trusted publishing (OIDC)
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # The type provider needs a live database at compile time, so it has to be up before the build
+      - name: Start test database
+        run: docker compose -f tests/docker-compose.yml up -d --build --wait
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '11.0.x'
+
+      - run: dotnet tool restore
+
+      # paket.template packs bin/Release, and the tests reference that same build output
+      - run: dotnet build FSharp.Data.Npgsql.sln -c Release
+
+      - run: dotnet test Tests.sln -c Release
+
+      # Takes the "### <version> - <date>" section of RELEASE_NOTES.md matching the tag (v3.0.3 -> 3.0.3)
+      - name: Extract release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '/^### /{ if (found) exit; if ($2 == v) { found = 1; next } } found' RELEASE_NOTES.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::No section for $version in RELEASE_NOTES.md"
+            exit 1
+          fi
+          cat notes.md
+
+      # Exchanges the GitHub OIDC token for a short-lived NuGet API key
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      # Version comes from src/Runtime/paket.template
+      - run: dotnet paket pack out --build-config Release
+
+      - run: dotnet nuget push "out/*.nupkg" -s https://api.nuget.org/v3/index.json -k ${{ steps.login.outputs.NUGET_API_KEY }} --skip-duplicate
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: gh release create "$GITHUB_REF_NAME" out/*.nupkg --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
